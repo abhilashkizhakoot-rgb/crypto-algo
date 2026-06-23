@@ -211,12 +211,25 @@ export default function App() {
       if (saveRes.ok) {
         // Trigger connectivity test
         await fetch("/api/exchange/test-connection", { method: "POST" });
-        setTimeout(async () => {
-          await fetchAllData();
-          setTestingConnection(false);
-          setShowExchangePanel(false);
-          alert("Delta Exchange credentials verified and hot-swapped successfully.");
-        }, 2000);
+        
+        // Poll status every 500ms
+        let attempts = 0;
+        const interval = setInterval(async () => {
+          attempts++;
+          const res = await fetch("/api/exchange/credentials");
+          if (res.ok) {
+            const data = await res.json();
+            setCredentials(data);
+            if (data.connection_status !== ConnectionStatus.TESTING || attempts >= 15) {
+              clearInterval(interval);
+              setTestingConnection(false);
+              await fetchAllData();
+            }
+          }
+        }, 500);
+      } else {
+        setTestingConnection(false);
+        alert("Failed to modify Delta Exchange credentials.");
       }
     } catch (e) {
       setTestingConnection(false);
@@ -309,56 +322,131 @@ export default function App() {
             className="bg-white border-b border-slate-200 overflow-hidden shadow-inner"
             id="exchange-keys-drawer"
           >
-            <form onSubmit={handleUpdateCredentials} className="max-w-4xl mx-auto px-6 py-6 space-y-6">
+            <form onSubmit={handleUpdateCredentials} className="max-w-6xl mx-auto px-6 py-6 space-y-6">
               <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
                 <Key className="w-5 h-5 text-indigo-500" />
                 <h2 className="font-sans font-semibold text-slate-800 text-sm">Delta Exchange API Configurations</h2>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs text-slate-600">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-mono text-slate-400 uppercase">Delta API Key</label>
-                  <input
-                    type="text"
-                    required
-                    value={formApiKey}
-                    onChange={(e) => setFormApiKey(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 font-mono"
-                  />
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                {/* Left Side: Form Controls */}
+                <div className="lg:col-span-7 space-y-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs text-slate-600">
+                    <div className="space-y-1.5 md:col-span-2">
+                      <label className="text-xs font-mono text-slate-400 uppercase">Delta API Key</label>
+                      <input
+                        type="text"
+                        required
+                        value={formApiKey}
+                        onChange={(e) => setFormApiKey(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 font-mono"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5 md:col-span-2">
+                      <label className="text-xs font-mono text-slate-400 uppercase">Delta API Secret</label>
+                      <input
+                        type="password"
+                        required
+                        value={formApiSecret}
+                        onChange={(e) => setFormApiSecret(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 font-mono"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-mono text-slate-400 uppercase">Account Email</label>
+                      <input
+                        type="email"
+                        required
+                        value={formEmail}
+                        onChange={(e) => setFormEmail(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-3 pt-5">
+                      <label className="flex items-center gap-2 cursor-pointer font-sans text-slate-500 hover:text-slate-800">
+                        <input
+                          type="checkbox"
+                          checked={formIsTestnet}
+                          onChange={(e) => setFormIsTestnet(e.target.checked)}
+                          className="rounded border-slate-300 bg-slate-50 text-indigo-600 focus:ring-0"
+                        />
+                        <span>Deploy on Delta Mock-Testnet environment</span>
+                      </label>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-mono text-slate-400 uppercase">Delta API Secret</label>
-                  <input
-                    type="password"
-                    required
-                    value={formApiSecret}
-                    onChange={(e) => setFormApiSecret(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 font-mono"
-                  />
-                </div>
+                {/* Right Side: Verification Widget */}
+                <div className="lg:col-span-5 bg-slate-50 rounded-xl p-5 border border-slate-200/60 flex flex-col justify-between space-y-4">
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider font-sans mb-3 flex items-center gap-1.5">
+                      <Server className="w-3.5 h-3.5 text-indigo-500" />
+                      Verification & Current Status
+                    </h3>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-mono text-slate-400 uppercase">Account Email</label>
-                  <input
-                    type="email"
-                    required
-                    value={formEmail}
-                    onChange={(e) => setFormEmail(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400"
-                  />
-                </div>
+                    {/* Status Badge */}
+                    <div className="flex items-center gap-3 bg-white p-3 rounded-lg border border-slate-200/50 shadow-sm">
+                      <div className="relative flex h-3 w-3">
+                        {credentials.connection_status === ConnectionStatus.TESTING ? (
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                        ) : credentials.connection_status === ConnectionStatus.CONNECTED ? (
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        ) : null}
+                        <span className={`relative inline-flex rounded-full h-3 w-3 ${
+                          credentials.connection_status === ConnectionStatus.CONNECTED
+                            ? "bg-emerald-500"
+                            : credentials.connection_status === ConnectionStatus.TESTING
+                            ? "bg-indigo-500"
+                            : "bg-rose-500"
+                        }`}></span>
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold font-mono text-slate-700">
+                          {credentials.connection_status}
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-sans">
+                          Last checked: {credentials.last_tested_at ? new Date(credentials.last_tested_at).toLocaleTimeString() : "Never"}
+                        </div>
+                      </div>
+                    </div>
 
-                <div className="flex items-center gap-3 pt-5">
-                  <label className="flex items-center gap-2 cursor-pointer font-sans text-slate-500 hover:text-slate-800">
-                    <input
-                      type="checkbox"
-                      checked={formIsTestnet}
-                      onChange={(e) => setFormIsTestnet(e.target.checked)}
-                      className="rounded border-slate-300 bg-slate-50 text-indigo-600 focus:ring-0"
-                    />
-                    <span>Deploy on Delta Mock-Testnet environment</span>
-                  </label>
+                    {/* Error logs, if any */}
+                    {credentials.connection_status === ConnectionStatus.FAILED && credentials.connection_error_message && (
+                      <div className="mt-3 bg-rose-50 border border-rose-100 rounded-lg p-3 text-rose-700 text-[11px] font-sans">
+                        <div className="font-bold flex items-center gap-1 mb-1">
+                          <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                          Authentication Refused
+                        </div>
+                        <p>{credentials.connection_error_message}</p>
+                      </div>
+                    )}
+
+                    {credentials.connection_status === ConnectionStatus.CONNECTED && (
+                      <div className="mt-3 bg-emerald-50 border border-emerald-100 rounded-lg p-3 text-emerald-800 text-[11px] font-sans">
+                        <div className="font-bold flex items-center gap-1 mb-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          Authenticated Successfully
+                        </div>
+                        <p>Delta Exchange API credentials validated and active. Live WebSocket feed is receiving ticker quotes.</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Message Signing Code Snippet */}
+                  <div className="border-t border-slate-200/60 pt-3">
+                    <h4 className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1">
+                      <span>Message Signing Protocol</span>
+                    </h4>
+                    <div className="bg-slate-900 text-slate-300 p-3 rounded-lg font-mono text-[9px] leading-relaxed space-y-1 select-all overflow-x-auto shadow-inner">
+                      <div className="text-slate-500">// Header: api-signature</div>
+                      <div>const timestamp = Math.floor(Date.now() / 1000);</div>
+                      <div>const data = "GET" + timestamp + "/v2/wallet/balances";</div>
+                      <div className="text-indigo-400 font-bold">const signature = hmac_sha256(secret, data);</div>
+                    </div>
+                  </div>
                 </div>
               </div>
 

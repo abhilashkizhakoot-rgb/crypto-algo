@@ -14,6 +14,7 @@ import {
   FolderOpen,
   ArrowLeftRight,
   Sparkles,
+  TrendingUp,
 } from "lucide-react";
 import { StrategyConfig, ConfigHistoryEntry, NewsSource } from "../types.js";
 
@@ -210,6 +211,40 @@ export default function ConfigPage({
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 outline-none font-mono"
                 />
                 <p className="text-[10px] text-slate-400">Absolute peak risk permitted under high volatility parameters.</p>
+              </div>
+
+              <div className="space-y-2 col-span-1 md:col-span-2 bg-indigo-50/40 border border-indigo-100/50 rounded-xl p-4 mt-1">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-semibold text-indigo-950 font-sans uppercase tracking-wider flex items-center gap-1.5">
+                    <TrendingUp className="w-3.5 h-3.5 text-indigo-500" />
+                    Target Leverage
+                  </label>
+                  <span className="font-mono text-xs font-bold bg-indigo-100 text-indigo-700 px-2.5 py-0.5 rounded-full">
+                    {riskConfig.leverage || 20}x
+                  </span>
+                </div>
+                <div className="flex items-center gap-4 mt-2">
+                  <input
+                    type="range"
+                    min="1"
+                    max="100"
+                    step="1"
+                    value={riskConfig.leverage || 20}
+                    onChange={(e) => setRiskConfig({ ...riskConfig, leverage: parseInt(e.target.value) || 20 })}
+                    className="flex-1 h-1.5 bg-indigo-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={riskConfig.leverage || 20}
+                    onChange={(e) => setRiskConfig({ ...riskConfig, leverage: Math.max(1, Math.min(100, parseInt(e.target.value) || 1)) })}
+                    className="w-16 bg-white border border-slate-200 rounded-lg p-1.5 text-center text-xs font-mono font-bold text-slate-800 focus:ring-1 focus:ring-indigo-400 outline-none"
+                  />
+                </div>
+                <p className="text-[10px] text-indigo-600/80 mt-1 font-sans">
+                  Specifies position scaling on Delta Exchange contracts. Higher leverage scales position size but increases liquidation risk.
+                </p>
               </div>
 
               <div className="space-y-1.5">

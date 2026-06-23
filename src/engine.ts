@@ -694,7 +694,7 @@ class TradingEngine {
     const accountEquity = creds.account_balance_usdt;
     const riskAmountUsdt = accountEquity * (config.risk_management.risk_per_trade_pct / 100);
     const positionQtyBtc = Number((riskAmountUsdt / stopLossDistance).toFixed(4));
-    const leverage = 20;
+    const leverage = config.risk_management.leverage || 20;
 
     const stopLossPrice = direction === "LONG" ? currentPrice - stopLossDistance : currentPrice + stopLossDistance;
     const takeProfitPrice = direction === "LONG" ? currentPrice + takeProfitDistance : currentPrice - takeProfitDistance;

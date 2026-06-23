@@ -23,7 +23,9 @@ import {
   XCircle,
 } from "lucide-react";
 import {
-  LineChart,
+  ComposedChart,
+  Bar,
+  Cell,
   Line,
   XAxis,
   YAxis,
@@ -32,6 +34,101 @@ import {
   ResponsiveContainer,
   ReferenceDot,
 } from "recharts";
+
+// High-fidelity custom SVG renderer for Candlestick bodies and wicks
+const CandlestickBar = (props: any) => {
+  const { x, y, width, height, payload } = props;
+  if (x === undefined || y === undefined || width === undefined || height === undefined || !payload) {
+    return null;
+  }
+
+  const { open, close, high, low } = payload;
+  const isBullish = close >= open;
+  const color = isBullish ? "#10b981" : "#ef4444";
+
+  // Calculate wick coordinates using the body's scale
+  const bodyMax = Math.max(open, close);
+  const bodyMin = Math.min(open, close);
+  const bodyPriceDiff = bodyMax - bodyMin;
+
+  let highY = y;
+  let lowY = y + height;
+
+  if (bodyPriceDiff > 0.01) {
+    const ratio = height / bodyPriceDiff;
+    highY = y + (bodyMax - high) * ratio;
+    lowY = y + (bodyMax - low) * ratio;
+  }
+
+  const cx = x + width / 2;
+
+  return (
+    <g>
+      {/* Wick line */}
+      <line
+        x1={cx}
+        y1={highY}
+        x2={cx}
+        y2={lowY}
+        stroke={color}
+        strokeWidth={1.5}
+      />
+      {/* Candle body */}
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={Math.max(1, height)} // ensure at least 1px height
+        fill={color}
+        stroke={color}
+      />
+    </g>
+  );
+};
+
+// Polished custom tooltip for financial candlesticks
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    const isBullish = data.close >= data.open;
+    return (
+      <div className="bg-white border border-slate-200 shadow-lg rounded-xl p-3 text-xs font-sans">
+        <p className="font-semibold text-slate-500 mb-1.5">{label}</p>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+          <div>
+            <span className="text-slate-400">Open:</span>{" "}
+            <span className="font-mono font-semibold text-slate-700">${data.open?.toLocaleString()}</span>
+          </div>
+          <div>
+            <span className="text-slate-400">High:</span>{" "}
+            <span className="font-mono font-semibold text-emerald-600">${data.high?.toLocaleString()}</span>
+          </div>
+          <div>
+            <span className="text-slate-400">Low:</span>{" "}
+            <span className="font-mono font-semibold text-rose-600">${data.low?.toLocaleString()}</span>
+          </div>
+          <div>
+            <span className="text-slate-400">Close:</span>{" "}
+            <span className={`font-mono font-semibold ${isBullish ? "text-emerald-600" : "text-rose-600"}`}>
+              ${data.close?.toLocaleString()}
+            </span>
+          </div>
+          <div className="col-span-2 border-t border-slate-100 my-1 pt-1 flex flex-col gap-0.5">
+            <div className="flex justify-between">
+              <span className="text-slate-400">EMA 21:</span>{" "}
+              <span className="font-mono text-blue-600">${data.ema21?.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">EMA 50:</span>{" "}
+              <span className="font-mono text-amber-600">${data.ema50?.toLocaleString()}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
 import {
   Trade,
   TradingSignal,
@@ -94,31 +191,48 @@ export default function Dashboard({
   const [chartData, setChartData] = useState<any[]>([]);
 
   useEffect(() => {
-    // Generate close price path with MA9, MA21 based on status current price
+    // Generate realistic, chronologically joined candlesticks backwards from current price
     const basePrice = status.current_price || 101500;
-    const dataPoints: any[] = [];
+    const tempPoints: any[] = [];
     const now = Date.now();
-
-    for (let i = 30; i >= 0; i--) {
+    
+    let currentClose = basePrice;
+    
+    for (let i = 0; i <= 30; i++) {
       const timeStr = new Date(now - i * 60000).toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
       });
 
-      // Simple wave logic
-      const offset = Math.sin(i * 0.4) * 250 + Math.cos(i * 0.1) * 120 + (Math.random() - 0.5) * 80;
-      const close = Number((basePrice - offset).toFixed(2));
-      const ema21 = Number((close * 0.98 + (basePrice * 0.02)).toFixed(2));
-      const ema50 = Number((close * 0.95 + (basePrice * 0.05)).toFixed(2));
+      // Generate random walk going backwards
+      const change = Math.sin(i * 0.45) * 120 + Math.cos(i * 0.15) * 60 + (Math.random() - 0.5) * 90;
+      const open = Number((currentClose - change).toFixed(2));
+      
+      const maxOC = Math.max(open, currentClose);
+      const minOC = Math.min(open, currentClose);
+      const high = Number((maxOC + Math.random() * 70).toFixed(2));
+      const low = Number((minOC - Math.random() * 70).toFixed(2));
 
-      dataPoints.push({
+      // Calculate EMAs based on close price
+      const ema21 = Number((currentClose * 0.98 + (basePrice * 0.02)).toFixed(2));
+      const ema50 = Number((currentClose * 0.95 + (basePrice * 0.05)).toFixed(2));
+
+      tempPoints.push({
         time: timeStr,
-        price: close,
+        open,
+        high,
+        low,
+        close: currentClose,
+        price: currentClose, // keep price as close for back compatibility
         ema21,
         ema50,
       });
+
+      currentClose = open;
     }
-    setChartData(dataPoints);
+
+    // Reverse so that the chronological order is oldest (left) to newest (right)
+    setChartData(tempPoints.reverse());
   }, [status.current_price]);
 
   // Determine sentiment score status color
@@ -352,23 +466,26 @@ export default function Dashboard({
                 <TrendingUp className="w-5 h-5 text-indigo-600" />
                 <span className="font-sans font-semibold text-slate-800 text-sm">Live Futures Tracker (1-Min candles)</span>
               </div>
-              <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400">
+              <div className="flex items-center gap-3 text-[10px] font-mono text-slate-400">
                 <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 bg-indigo-500 rounded-full" /> Price
+                  <span className="w-2 h-2 bg-emerald-500 rounded-sm" /> Bullish
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 bg-emerald-500 rounded-full" /> EMA 21
+                  <span className="w-2 h-2 bg-rose-500 rounded-sm" /> Bearish
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 bg-amber-500 rounded-full" /> EMA 50
+                  <span className="w-2.5 h-0.5 bg-blue-500" /> EMA 21
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2.5 h-0.5 bg-amber-500 animate-pulse" /> EMA 50
                 </span>
               </div>
             </div>
 
-            {/* Price Line chart */}
+            {/* Price Candlestick chart */}
             <div className="h-[280px] w-full" id="live-futures-chart">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData} margin={{ top: 5, right: 5, left: 10, bottom: 5 }}>
+                <ComposedChart data={chartData} margin={{ top: 5, right: 5, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                   <XAxis dataKey="time" stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={false} />
                   <YAxis
@@ -379,15 +496,19 @@ export default function Dashboard({
                     axisLine={false}
                     tickFormatter={(val) => `$${val}`}
                   />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: "#ffffff", borderColor: "#e2e8f0" }}
-                    labelStyle={{ color: "#64748b", fontSize: "10px" }}
-                    itemStyle={{ fontSize: "11px", color: "#1e293b" }}
-                  />
-                  <Line type="monotone" dataKey="price" stroke="#4f46e5" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                  <Line type="monotone" dataKey="ema21" stroke="#10b981" strokeWidth={1.2} dot={false} strokeDasharray="4 4" />
-                  <Line type="monotone" dataKey="ema50" stroke="#f59e0b" strokeWidth={1.2} dot={false} strokeDasharray="4 4" />
-                </LineChart>
+                  <Tooltip content={<CustomTooltip />} />
+                  
+                  {/* Invisible bounds for high/low to force perfect YAxis auto-scaling */}
+                  <Line type="monotone" dataKey="high" stroke="none" dot={false} activeDot={false} legendType="none" />
+                  <Line type="monotone" dataKey="low" stroke="none" dot={false} activeDot={false} legendType="none" />
+                  
+                  {/* Candlestick bodies and wicks */}
+                  <Bar dataKey="close" shape={<CandlestickBar />} />
+                  
+                  {/* EMA overlays */}
+                  <Line type="monotone" dataKey="ema21" stroke="#3b82f6" strokeWidth={1.5} dot={false} strokeDasharray="3 3" />
+                  <Line type="monotone" dataKey="ema50" stroke="#f59e0b" strokeWidth={1.5} dot={false} strokeDasharray="4 4" />
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
           </div>

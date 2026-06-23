@@ -188,6 +188,7 @@ export interface StrategyConfig {
     daily_loss_limit_pct: number; // e.g. 2.0
     weekly_loss_limit_pct: number; // e.g. 5.0
     intra_trade_drawdown_limit_pct: number; // e.g. 1.5
+    leverage: number; // leverage setting (e.g. 10x, 20x, 50x)
   };
 }
 

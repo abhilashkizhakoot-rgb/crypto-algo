@@ -91,6 +91,7 @@ const DEFAULT_CONFIG: StrategyConfig = {
     daily_loss_limit_pct: 2.0,
     weekly_loss_limit_pct: 5.0,
     intra_trade_drawdown_limit_pct: 1.5,
+    leverage: 20,
   },
 };
 
@@ -101,10 +102,10 @@ const DEFAULT_CREDENTIALS: ExchangeCredentials = {
   ws_url: "wss://production.delta.exchange",
   api_key: "delta_prod_api_key_xxxxxxxxxxxxx",
   api_secret: "delta_prod_api_secret_yyyyyyyyyyyyy",
-  connection_status: ConnectionStatus.CONNECTED,
+  connection_status: ConnectionStatus.NOT_CONFIGURED,
   last_tested_at: new Date().toISOString(),
-  last_successful_connection: new Date().toISOString(),
-  connection_error_message: null,
+  last_successful_connection: "",
+  connection_error_message: "API keys are not configured. Please supply valid Delta Exchange credentials.",
   account_balance_usdt: 104520.35,
   account_email: "abhilashkizhakoot@gmail.com",
   product_id: 1,

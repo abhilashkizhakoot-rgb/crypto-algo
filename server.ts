@@ -5,6 +5,7 @@
 
 import express from "express";
 import path from "path";
+import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { dbManager } from "./src/db_sim.js";
 import { tradingEngine } from "./src/engine.js";
@@ -46,22 +47,98 @@ async function startServer() {
     res.json(updated);
   });
 
-  app.post("/api/exchange/test-connection", (req, res) => {
+  app.post("/api/exchange/test-connection", async (req, res) => {
     dbManager.updateCredentials({
       connection_status: ConnectionStatus.TESTING,
       last_tested_at: new Date().toISOString(),
     });
 
-    // Simulate short network test and succeed
-    setTimeout(() => {
-      dbManager.updateCredentials({
-        connection_status: ConnectionStatus.CONNECTED,
-        last_successful_connection: new Date().toISOString(),
-        connection_error_message: null,
-      });
-    }, 1500);
+    const creds = dbManager.getCredentials();
+    const isMock = !creds.api_key || !creds.api_secret ||
+      creds.api_key.includes("xxxxxxxxxxxxx") ||
+      creds.api_secret.includes("yyyyyyyyyyyyy") ||
+      creds.api_key === "mock" ||
+      creds.api_secret === "mock";
 
-    res.json({ status: "testing_initiated" });
+    if (isMock) {
+      // Simulate validation failure for sandbox keys after 1 second
+      setTimeout(() => {
+        dbManager.updateCredentials({
+          connection_status: ConnectionStatus.FAILED,
+          connection_error_message: "Authentication failed: Sandbox/mock credentials detected. Please configure real, active Delta Exchange API Key and Secret to connect.",
+        });
+      }, 1000);
+
+      return res.json({ status: "testing_initiated", is_mock: true });
+    }
+
+    try {
+      const baseUrl = creds.is_testnet ? "https://testnet-api.delta.exchange" : "https://api.delta.exchange";
+      const path = "/v2/wallet/balances";
+      const timestamp = Math.floor(Date.now() / 1000).toString();
+      const method = "GET";
+      const queryString = "";
+      const payload = "";
+
+      const signatureData = method + timestamp + path + queryString + payload;
+      const signature = crypto.createHmac("sha256", creds.api_secret).update(signatureData).digest("hex");
+
+      const response = await fetch(`${baseUrl}${path}`, {
+        method,
+        headers: {
+          "api-key": creds.api_key,
+          "api-signature": signature,
+          "api-timestamp": timestamp,
+          "Content-Type": "application/json",
+          "User-Agent": "Delta-Exchange-Trading-Bot/1.0"
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // Set actual balance from Delta if available, otherwise fallback to existing mock balance
+        let balanceUsdt = creds.account_balance_usdt;
+        if (data && data.result && Array.isArray(data.result)) {
+          const usdtBal = data.result.find((item: any) => item.asset_symbol === "USDT" || item.asset === "USDT");
+          if (usdtBal) {
+            balanceUsdt = parseFloat(usdtBal.balance || usdtBal.available_balance || balanceUsdt);
+          }
+        }
+        dbManager.updateCredentials({
+          connection_status: ConnectionStatus.CONNECTED,
+          last_successful_connection: new Date().toISOString(),
+          connection_error_message: null,
+          account_balance_usdt: balanceUsdt,
+        });
+      } else {
+        const errorText = await response.text();
+        let errorMessage = `Authentication failed (HTTP ${response.status})`;
+        try {
+          const parsedError = JSON.parse(errorText);
+          if (parsedError.error && parsedError.error.message) {
+            errorMessage += `: ${parsedError.error.message}`;
+          } else if (parsedError.message) {
+            errorMessage += `: ${parsedError.message}`;
+          }
+        } catch {
+          if (errorText) {
+            errorMessage += `: ${errorText.substring(0, 100)}`;
+          }
+        }
+
+        dbManager.updateCredentials({
+          connection_status: ConnectionStatus.FAILED,
+          connection_error_message: errorMessage,
+        });
+      }
+    } catch (error: any) {
+      dbManager.updateCredentials({
+        connection_status: ConnectionStatus.FAILED,
+        connection_error_message: `Network failure connecting to Delta Exchange: ${error.message || error}`,
+      });
+    }
+
+    res.json({ status: "testing_initiated", is_mock: false });
   });
 
   app.post("/api/exchange/disconnect", (req, res) => {
