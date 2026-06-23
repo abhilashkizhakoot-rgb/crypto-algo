@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   TrendingUp,
@@ -98,6 +98,11 @@ export default function App() {
 
   // Exchange Config Panel visibility
   const [showExchangePanel, setShowExchangePanel] = useState(false);
+  const showExchangePanelRef = useRef(showExchangePanel);
+  useEffect(() => {
+    showExchangePanelRef.current = showExchangePanel;
+  }, [showExchangePanel]);
+
   const [formApiKey, setFormApiKey] = useState("");
   const [formApiSecret, setFormApiSecret] = useState("");
   const [formEmail, setFormEmail] = useState("");
@@ -116,11 +121,12 @@ export default function App() {
       if (credsRes.ok) {
         const credsData = await credsRes.json();
         setCredentials(credsData);
-        if (!formApiKey) {
-          setFormApiKey(credsData.api_key);
-          setFormApiSecret(credsData.api_secret);
-          setFormEmail(credsData.account_email);
-          setFormIsTestnet(credsData.is_testnet);
+        // Only update form inputs when the drawer is NOT open, to avoid resetting active edits
+        if (!showExchangePanelRef.current && !formApiKey) {
+          setFormApiKey(credsData.api_key || "");
+          setFormApiSecret(credsData.api_secret || "");
+          setFormEmail(credsData.account_email || "");
+          setFormIsTestnet(credsData.is_testnet || false);
         }
       }
 
@@ -298,7 +304,16 @@ export default function App() {
         {/* Exchange Key Connector Button */}
         <div className="flex items-center gap-3">
           <button
-            onClick={() => setShowExchangePanel(!showExchangePanel)}
+            onClick={() => {
+              if (!showExchangePanel) {
+                // Initialize form values from current active credentials when opening
+                setFormApiKey(credentials.api_key || "");
+                setFormApiSecret(credentials.api_secret || "");
+                setFormEmail(credentials.account_email || "");
+                setFormIsTestnet(credentials.is_testnet || false);
+              }
+              setShowExchangePanel(!showExchangePanel);
+            }}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium font-sans border transition-all cursor-pointer ${
               credentials.connection_status === ConnectionStatus.CONNECTED
                 ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100/50"
