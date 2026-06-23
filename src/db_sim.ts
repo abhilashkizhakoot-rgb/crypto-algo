@@ -1,0 +1,713 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import * as fs from "fs";
+import * as path from "path";
+import {
+  ExchangeCredentials,
+  Trade,
+  TradingSignal,
+  RegimeLog,
+  SentimentLog,
+  NewsHeadline,
+  StrategyConfig,
+  ConfigHistoryEntry,
+  ConnectionStatus,
+  TradeDirection,
+  ExitReason,
+  MarketRegime,
+  NewsSource,
+  DailyStats,
+} from "./types.js";
+
+const DB_FILE_PATH = path.join(process.cwd(), "db_store.json");
+
+interface DatabaseSchema {
+  credentials: ExchangeCredentials;
+  trades: Trade[];
+  signals: TradingSignal[];
+  regime_logs: RegimeLog[];
+  sentiment_logs: SentimentLog[];
+  headlines: NewsHeadline[];
+  config: StrategyConfig;
+  config_profiles: Record<string, StrategyConfig>;
+  config_history: ConfigHistoryEntry[];
+}
+
+const DEFAULT_CONFIG: StrategyConfig = {
+  general: {
+    is_trading_active: false,
+    cooldown_minutes: 30,
+    max_trades_per_day: 8,
+  },
+  ml_settings: {
+    entry_threshold_long: 0.80,
+    entry_threshold_short: 0.20,
+    model_version: "v2.4.1",
+    last_trained_at: new Date(Date.now() - 24 * 3600000 * 2).toISOString(),
+    training_window_months: 6,
+    validation_auc: 0.84,
+    auto_retrain_weekly: true,
+    retrain_on_perf_drop: true,
+    retrain_on_feature_drift: true,
+  },
+  sentiment_settings: {
+    entry_threshold_long: 0.25,
+    entry_threshold_short: -0.25,
+    require_momentum_long: true,
+    require_momentum_short: true,
+    block_on_critical_keywords: true,
+    protection_window_minutes: 15,
+    critical_keywords: [
+      "CPI", "FOMC", "federal reserve", "interest rate", "inflation",
+      "ETF", "SEC", "regulation", "hack", "exploit", "ban", "halving",
+      "fork", "upgrade", "delist", "security breach", "stolen"
+    ],
+    weights: {
+      [NewsSource.COINDESK]: 25,
+      [NewsSource.COINTELEGRAPH]: 20,
+      [NewsSource.THEBLOCK]: 20,
+      [NewsSource.BITCOIN_MAGAZINE]: 15,
+      [NewsSource.TWITTER]: 10,
+      [NewsSource.REDDIT]: 10,
+    },
+    refresh_rates_min: {
+      [NewsSource.COINDESK]: 5,
+      [NewsSource.COINTELEGRAPH]: 5,
+      [NewsSource.THEBLOCK]: 5,
+      [NewsSource.BITCOIN_MAGAZINE]: 5,
+      [NewsSource.TWITTER]: 10,
+      [NewsSource.REDDIT]: 15,
+    },
+  },
+  risk_management: {
+    risk_per_trade_pct: 0.5,
+    max_risk_per_trade_pct: 1.0,
+    stop_loss_atr_multiplier: 1.3,
+    take_profit_ratio: 2.0,
+    max_consecutive_losses: 3,
+    daily_loss_limit_pct: 2.0,
+    weekly_loss_limit_pct: 5.0,
+    intra_trade_drawdown_limit_pct: 1.5,
+  },
+};
+
+const DEFAULT_CREDENTIALS: ExchangeCredentials = {
+  id: "delta-exchange-prod-key",
+  exchange_name: "Delta Exchange",
+  api_url: "https://api.delta.exchange",
+  ws_url: "wss://production.delta.exchange",
+  api_key: "delta_prod_api_key_xxxxxxxxxxxxx",
+  api_secret: "delta_prod_api_secret_yyyyyyyyyyyyy",
+  connection_status: ConnectionStatus.CONNECTED,
+  last_tested_at: new Date().toISOString(),
+  last_successful_connection: new Date().toISOString(),
+  connection_error_message: null,
+  account_balance_usdt: 104520.35,
+  account_email: "abhilashkizhakoot@gmail.com",
+  product_id: 1,
+  product_symbol: "BTCUSD-FUTURES",
+  is_testnet: false,
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+};
+
+// Generates high-fidelity historical data so the app has instantly impressive charts and analytics
+function generateMockHistory(): DatabaseSchema {
+  const trades: Trade[] = [];
+  const signals: TradingSignal[] = [];
+  const regime_logs: RegimeLog[] = [];
+  const sentiment_logs: SentimentLog[] = [];
+  const headlines: NewsHeadline[] = [];
+
+  const now = Date.now();
+  let currentBalance = 100000; // Starting capital is $100,000
+
+  // 1. Generate historical regimes (last 24 hours, every 5 mins)
+  const regimes = [
+    MarketRegime.STRONG_UPTREND,
+    MarketRegime.STRONG_DOWNTREND,
+    MarketRegime.RANGE_BOUND,
+    MarketRegime.HIGH_VOLATILITY,
+    MarketRegime.LOW_VOLATILITY,
+  ];
+
+  for (let i = 288; i >= 0; i--) {
+    const timestamp = new Date(now - i * 5 * 60 * 1000).toISOString();
+    // Weighted selection of regime based on indexes
+    let regimeIndex = 2; // Range bound by default
+    if (i > 200 && i < 250) regimeIndex = 0; // Uptrend
+    else if (i > 120 && i < 170) regimeIndex = 1; // Downtrend
+    else if (i > 50 && i < 80) regimeIndex = 3; // High vol
+    else if (i < 20) regimeIndex = 4; // Low vol
+
+    regime_logs.push({
+      id: `regime-${288 - i}`,
+      detected_at: timestamp,
+      regime: regimes[regimeIndex],
+      confidence: 0.65 + Math.random() * 0.3,
+      adx_value: regimeIndex === 0 || regimeIndex === 1 ? 28 + Math.random() * 15 : 12 + Math.random() * 10,
+      atr_expansion_ratio: regimeIndex === 3 ? 1.6 + Math.random() * 0.8 : 0.8 + Math.random() * 0.5,
+      bb_width_percentile: regimeIndex === 4 ? Math.random() * 15 : 40 + Math.random() * 50,
+      ema_structure: regimeIndex === 0 ? "BULLISH_ALIGNED" : regimeIndex === 1 ? "BEARISH_ALIGNED" : "MIXED",
+      realized_volatility: 0.01 + Math.random() * 0.04,
+      volume_expansion: 0.7 + Math.random() * 2.1,
+      created_at: timestamp,
+    });
+
+    // 2. Generate historical sentiment logs
+    if (i % 3 === 0) {
+      sentiment_logs.push({
+        id: `sent-log-${Math.floor(288 - i / 3)}`,
+        refreshed_at: timestamp,
+        source: NewsSource.COINDESK,
+        headline_count: 5 + Math.floor(Math.random() * 8),
+        positive_count: regimeIndex === 0 ? 6 : regimeIndex === 1 ? 1 : 3,
+        neutral_count: 3,
+        negative_count: regimeIndex === 0 ? 1 : regimeIndex === 1 ? 5 : 2,
+        current_sentiment: regimeIndex === 0 ? 0.45 + Math.random() * 0.3 : regimeIndex === 1 ? -0.45 - Math.random() * 0.3 : -0.1 + Math.random() * 0.2,
+        sentiment_30m_avg: regimeIndex === 0 ? 0.38 : regimeIndex === 1 ? -0.35 : 0.02,
+        sentiment_1h_avg: regimeIndex === 0 ? 0.32 : regimeIndex === 1 ? -0.30 : 0.01,
+        sentiment_4h_avg: 0.1,
+        sentiment_momentum: regimeIndex === 0 ? 0.15 : regimeIndex === 1 ? -0.15 : 0.01,
+        sentiment_volatility: 0.12,
+        news_intensity_30m: 10 + Math.floor(Math.random() * 15),
+        news_intensity_60m: 20 + Math.floor(Math.random() * 25),
+        processing_time_ms: 200 + Math.floor(Math.random() * 300),
+        created_at: timestamp,
+      });
+    }
+  }
+
+  // 3. Generate 25 historical trades over the last 3 days
+  const basePrice = 101250;
+  for (let k = 25; k >= 1; k--) {
+    const tradeHoursAgo = k * 2.8 + Math.random() * 1.5;
+    const entryTime = new Date(now - tradeHoursAgo * 3600 * 1000);
+    const exitTime = new Date(entryTime.getTime() + (10 + Math.floor(Math.random() * 18)) * 60000); // 10-28 mins duration
+
+    const direction = Math.random() > 0.42 ? TradeDirection.LONG : TradeDirection.SHORT;
+    const isWin = Math.random() > 0.34; // ~66% Win Rate
+
+    const entryPrice = basePrice + (direction === TradeDirection.LONG ? -200 : 200) + Math.random() * 1000 - Math.random() * 1000;
+    const atrValue = 120 + Math.random() * 80;
+    const stopDistance = atrValue * 1.3;
+    const takeProfitDistance = stopDistance * 2;
+
+    let exitPrice = entryPrice;
+    let exitReason: ExitReason;
+
+    if (isWin) {
+      exitPrice = direction === TradeDirection.LONG ? entryPrice + takeProfitDistance : entryPrice - takeProfitDistance;
+      exitReason = ExitReason.TAKE_PROFIT;
+    } else {
+      exitPrice = direction === TradeDirection.LONG ? entryPrice - stopDistance : entryPrice + stopDistance;
+      exitReason = Math.random() > 0.7 ? ExitReason.TIME_LIMIT_29MIN : ExitReason.STOP_LOSS;
+    }
+
+    const tradeRiskUsdt = currentBalance * 0.005; // 0.5% risk
+    const quantityBtc = Number((tradeRiskUsdt / stopDistance).toFixed(4));
+    const leverage = 20;
+
+    let pnlUsdt = 0;
+    if (direction === TradeDirection.LONG) {
+      pnlUsdt = (exitPrice - entryPrice) * quantityBtc;
+    } else {
+      pnlUsdt = (entryPrice - exitPrice) * quantityBtc;
+    }
+
+    // Fees paid: 0.05% of position size on entry and exit
+    const positionValue = entryPrice * quantityBtc;
+    const feesPaid = positionValue * 0.0006 * 2;
+    pnlUsdt -= feesPaid;
+
+    currentBalance += pnlUsdt;
+
+    const catboostProbability = direction === TradeDirection.LONG
+      ? (isWin ? 0.81 + Math.random() * 0.15 : 0.70 + Math.random() * 0.12)
+      : (isWin ? 0.05 + Math.random() * 0.12 : 0.15 + Math.random() * 0.14);
+
+    const regime = direction === TradeDirection.LONG ? MarketRegime.STRONG_UPTREND : MarketRegime.STRONG_DOWNTREND;
+
+    trades.push({
+      id: `trade-hist-${26 - k}`,
+      entry_timestamp: entryTime.toISOString(),
+      exit_timestamp: exitTime.toISOString(),
+      direction,
+      entry_price: Number(entryPrice.toFixed(2)),
+      exit_price: Number(exitPrice.toFixed(2)),
+      quantity_btc: quantityBtc,
+      leverage,
+      pnl_usdt: Number(pnlUsdt.toFixed(2)),
+      pnl_pct: Number(((pnlUsdt / currentBalance) * 100).toFixed(4)),
+      fees_paid_usdt: Number(feesPaid.toFixed(4)),
+      exit_reason: exitReason,
+      catboost_probability: Number(catboostProbability.toFixed(4)),
+      regime_at_entry: regime,
+      sentiment_score_at_entry: direction === TradeDirection.LONG ? 0.35 + Math.random() * 0.3 : -0.35 - Math.random() * 0.3,
+      sentiment_momentum_at_entry: direction === TradeDirection.LONG ? 0.12 : -0.11,
+      entry_signal_score: 82 + Math.floor(Math.random() * 16),
+      max_favorable_excursion: isWin ? 2.1 : 0.4 + Math.random() * 0.6,
+      max_adverse_excursion: isWin ? 0.3 + Math.random() * 0.4 : 1.35,
+      hold_duration_seconds: Math.floor((exitTime.getTime() - entryTime.getTime()) / 1000),
+      is_win: isWin,
+      feature_snapshot: {
+        adx: 32.5,
+        atr_14: atrValue,
+        rsi_14: direction === TradeDirection.LONG ? 62 : 38,
+        macd_hist: direction === TradeDirection.LONG ? 12.5 : -14.2,
+      },
+      created_at: entryTime.toISOString(),
+    });
+
+    // 4. Generate some matching signals
+    signals.push({
+      id: `sig-${26 - k}`,
+      trade_id: `trade-hist-${26 - k}`,
+      timestamp: entryTime.toISOString(),
+      catboost_probability: Number(catboostProbability.toFixed(4)),
+      direction,
+      regime_detected: regime,
+      sentiment_score: direction === TradeDirection.LONG ? 0.45 : -0.42,
+      sentiment_momentum: direction === TradeDirection.LONG ? 0.12 : -0.15,
+      all_conditions_met: true,
+      failed_conditions: [],
+      executed: true,
+      rejection_reason: null,
+      created_at: entryTime.toISOString(),
+    });
+  }
+
+  // 5. Generate typical high-fidelity crypto headlines
+  const sampleHeadlines = [
+    { text: "US Core CPI Inflation Clocks In at 0.2%, Matching Market Estimates", score: 0.15, isCritical: true, keyword: "CPI" },
+    { text: "Bitcoin Futures Open Interest Hits Lifetime High on Delta Exchange", score: 0.62, isCritical: false, keyword: null },
+    { text: "Securities and Exchange Commission Approves Spot Bitcoin ETF Options Options Trading", score: 0.85, isCritical: true, keyword: "ETF" },
+    { text: "Whale Wallet Deposits $150M of Bitcoin to Binances Orderbooks, Prompting Liquidation Fears", score: -0.45, isCritical: false, keyword: null },
+    { text: "Federal Reserve Chair Powell Signals Multiple Interest Rate Cuts Coming in 2026", score: 0.72, isCritical: true, keyword: "federal reserve" },
+    { text: "Major Cryptocurrency Bridge Exploited for $45 Million in Ethereum and WBTC", score: -0.82, isCritical: true, keyword: "exploit" },
+    { text: "Bitcoin Difficulty Jumps 4.2% as Hashrate Peaks to New All-Time Milestones", score: 0.35, isCritical: false, keyword: null },
+    { text: "Germany Finalizes Strict Crypto Staking and Token Valuation Policy Guidelines", score: -0.12, isCritical: true, keyword: "regulation" },
+    { text: "FOMC Statement Confirms 25 Basis Points Rate Cut to Target Volatility Reduction", score: 0.65, isCritical: true, keyword: "FOMC" },
+    { text: "Bitcoin Halving Nears with Mining Pool Revenue Dropping Slightly Ahead of Schedule", score: 0.1, isCritical: true, keyword: "halving" },
+  ];
+
+  sampleHeadlines.forEach((sh, idx) => {
+    headlines.push({
+      id: `hl-${idx + 1}`,
+      timestamp: new Date(now - idx * 32 * 60000).toISOString(),
+      source: idx % 2 === 0 ? NewsSource.COINDESK : NewsSource.THEBLOCK,
+      headline: sh.text,
+      sentiment_score: sh.score,
+      category: sh.score > 0.25 ? "BULLISH" : sh.score < -0.25 ? "BEARISH" : "NEUTRAL",
+      has_critical_keyword: sh.isCritical,
+      matched_keyword: sh.keyword,
+    });
+  });
+
+  return {
+    credentials: {
+      ...DEFAULT_CREDENTIALS,
+      account_balance_usdt: Number(currentBalance.toFixed(2)),
+    },
+    trades,
+    signals,
+    regime_logs,
+    sentiment_logs,
+    headlines,
+    config: DEFAULT_CONFIG,
+    config_profiles: {
+      "Conservative Default": DEFAULT_CONFIG,
+      "Aggressive Grid": {
+        ...DEFAULT_CONFIG,
+        ml_settings: {
+          ...DEFAULT_CONFIG.ml_settings,
+          entry_threshold_long: 0.72,
+          entry_threshold_short: 0.28,
+        },
+        risk_management: {
+          ...DEFAULT_CONFIG.risk_management,
+          risk_per_trade_pct: 1.0,
+        },
+      },
+    },
+    config_history: [
+      {
+        id: "hist-1",
+        timestamp: new Date(now - 4 * 3600 * 1000).toISOString(),
+        category: "ml_settings",
+        changed_by: "System Optimizer",
+        changes: [
+          { key: "entry_threshold_long", old_value: 0.85, new_value: 0.80 },
+        ],
+      },
+    ],
+  };
+}
+
+class DatabaseManager {
+  private cache: DatabaseSchema | null = null;
+
+  constructor() {
+    this.init();
+  }
+
+  private init() {
+    try {
+      if (fs.existsSync(DB_FILE_PATH)) {
+        const fileContent = fs.readFileSync(DB_FILE_PATH, "utf-8");
+        this.cache = JSON.parse(fileContent);
+      } else {
+        const mockData = generateMockHistory();
+        this.cache = mockData;
+        this.save();
+      }
+    } catch (e) {
+      console.error("Failed to initialize database store, generating temporary memory-based database:", e);
+      this.cache = generateMockHistory();
+    }
+  }
+
+  private save() {
+    try {
+      if (this.cache) {
+        fs.writeFileSync(DB_FILE_PATH, JSON.stringify(this.cache, null, 2), "utf-8");
+      }
+    } catch (e) {
+      console.error("Failed to write state to db_store.json:", e);
+    }
+  }
+
+  public getCredentials(): ExchangeCredentials {
+    return this.cache!.credentials;
+  }
+
+  public updateCredentials(creds: Partial<ExchangeCredentials>): ExchangeCredentials {
+    this.cache!.credentials = {
+      ...this.cache!.credentials,
+      ...creds,
+      updated_at: new Date().toISOString(),
+    };
+    this.save();
+    return this.cache!.credentials;
+  }
+
+  public getTrades(): Trade[] {
+    return this.cache!.trades;
+  }
+
+  public getTradeById(id: string): Trade | undefined {
+    return this.cache!.trades.find((t) => t.id === id);
+  }
+
+  public addTrade(trade: Omit<Trade, "id" | "created_at">): Trade {
+    const newTrade: Trade = {
+      ...trade,
+      id: `trade-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      created_at: new Date().toISOString(),
+    };
+    this.cache!.trades.unshift(newTrade);
+    this.save();
+    return newTrade;
+  }
+
+  public updateTrade(id: string, updates: Partial<Trade>): Trade {
+    const idx = this.cache!.trades.findIndex((t) => t.id === id);
+    if (idx === -1) {
+      throw new Error(`Trade with ID ${id} not found`);
+    }
+    const updatedTrade = {
+      ...this.cache!.trades[idx],
+      ...updates,
+    };
+    this.cache!.trades[idx] = updatedTrade;
+    this.save();
+    return updatedTrade;
+  }
+
+  public getSignals(): TradingSignal[] {
+    return this.cache!.signals;
+  }
+
+  public addSignal(signal: Omit<TradingSignal, "id" | "created_at">): TradingSignal {
+    const newSignal: TradingSignal = {
+      ...signal,
+      id: `sig-${Date.now()}`,
+      created_at: new Date().toISOString(),
+    };
+    this.cache!.signals.unshift(newSignal);
+    if (this.cache!.signals.length > 300) {
+      this.cache!.signals.pop();
+    }
+    this.save();
+    return newSignal;
+  }
+
+  public getRegimeLogs(): RegimeLog[] {
+    return this.cache!.regime_logs;
+  }
+
+  public addRegimeLog(log: Omit<RegimeLog, "id" | "created_at">): RegimeLog {
+    const newLog: RegimeLog = {
+      ...log,
+      id: `regime-log-${Date.now()}`,
+      created_at: new Date().toISOString(),
+    };
+    this.cache!.regime_logs.unshift(newLog);
+    if (this.cache!.regime_logs.length > 1000) {
+      this.cache!.regime_logs.pop();
+    }
+    this.save();
+    return newLog;
+  }
+
+  public getSentimentLogs(): SentimentLog[] {
+    return this.cache!.sentiment_logs;
+  }
+
+  public addSentimentLog(log: Omit<SentimentLog, "id" | "created_at">): SentimentLog {
+    const newLog: SentimentLog = {
+      ...log,
+      id: `sent-log-${Date.now()}`,
+      created_at: new Date().toISOString(),
+    };
+    this.cache!.sentiment_logs.unshift(newLog);
+    if (this.cache!.sentiment_logs.length > 500) {
+      this.cache!.sentiment_logs.pop();
+    }
+    this.save();
+    return newLog;
+  }
+
+  public getHeadlines(): NewsHeadline[] {
+    return this.cache!.headlines;
+  }
+
+  public addHeadline(hl: Omit<NewsHeadline, "id">): NewsHeadline {
+    const newHeadline: NewsHeadline = {
+      ...hl,
+      id: `hl-${Date.now()}`,
+    };
+    this.cache!.headlines.unshift(newHeadline);
+    if (this.cache!.headlines.length > 200) {
+      this.cache!.headlines.pop();
+    }
+    this.save();
+    return newHeadline;
+  }
+
+  public getConfig(): StrategyConfig {
+    return this.cache!.config;
+  }
+
+  public updateConfig(category: keyof StrategyConfig, updates: any, changedBy = "Admin UI"): StrategyConfig {
+    const oldVal = { ...this.cache!.config[category] };
+    const newVal = { ...oldVal, ...updates };
+
+    this.cache!.config[category] = newVal as any;
+
+    const changesList = Object.keys(updates).map((key) => ({
+      key: `${category}.${key}`,
+      old_value: oldVal[key],
+      new_value: updates[key],
+    }));
+
+    if (changesList.length > 0) {
+      this.cache!.config_history.unshift({
+        id: `change-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        category,
+        changed_by: changedBy,
+        changes: changesList,
+      });
+
+      if (this.cache!.config_history.length > 100) {
+        this.cache!.config_history.pop();
+      }
+    }
+
+    this.save();
+    return this.cache!.config;
+  }
+
+  public getProfiles(): Record<string, StrategyConfig> {
+    return this.cache!.config_profiles;
+  }
+
+  public saveProfile(name: string, config: StrategyConfig) {
+    this.cache!.config_profiles[name] = config;
+    this.save();
+  }
+
+  public deleteProfile(name: string) {
+    delete this.cache!.config_profiles[name];
+    this.save();
+  }
+
+  public loadProfile(name: string): StrategyConfig {
+    const profile = this.cache!.config_profiles[name];
+    if (!profile) {
+      throw new Error(`Profile ${name} not found`);
+    }
+    this.cache!.config = { ...profile };
+    this.save();
+    return this.cache!.config;
+  }
+
+  public getConfigHistory(): ConfigHistoryEntry[] {
+    return this.cache!.config_history;
+  }
+
+  public getAnalyticsSummary(): any {
+    const trades = this.cache!.trades.filter((t) => t.exit_price !== null);
+    const winTrades = trades.filter((t) => t.is_win);
+    const lossTrades = trades.filter((t) => !t.is_win);
+
+    const totalTrades = trades.length;
+    const wins = winTrades.length;
+    const losses = lossTrades.length;
+    const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
+
+    const grossProfit = winTrades.reduce((acc, t) => acc + (t.pnl_usdt || 0), 0);
+    const grossLoss = Math.abs(lossTrades.reduce((acc, t) => acc + (t.pnl_usdt || 0), 0));
+    const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? 99.9 : 0;
+
+    const netProfit = trades.reduce((acc, t) => acc + (t.pnl_usdt || 0), 0);
+    const totalFees = trades.reduce((acc, t) => acc + (t.fees_paid_usdt || 0), 0);
+
+    // Calculate max drawdown on our trades list
+    let runningBalance = 100000;
+    let peak = 100000;
+    let maxDd = 0;
+    const sortedTradesAsc = [...trades].sort(
+      (a, b) => new Date(a.entry_timestamp).getTime() - new Date(b.entry_timestamp).getTime()
+    );
+
+    sortedTradesAsc.forEach((t) => {
+      runningBalance += t.pnl_usdt || 0;
+      if (runningBalance > peak) peak = runningBalance;
+      const dd = peak - runningBalance;
+      if (dd > maxDd) maxDd = dd;
+    });
+
+    // Sharpe ratio (approximation)
+    const returns = sortedTradesAsc.map((t) => t.pnl_pct || 0);
+    const avgReturn = returns.reduce((acc, r) => acc + r, 0) / (returns.length || 1);
+    const variance = returns.reduce((acc, r) => acc + Math.pow(r - avgReturn, 2), 0) / (returns.length || 1);
+    const stdDev = Math.sqrt(variance);
+    const sharpeRatio = stdDev > 0 ? (avgReturn / stdDev) * Math.sqrt(252 * 4) : 0; // scaled for short timeline
+
+    return {
+      total_trades: totalTrades,
+      wins,
+      losses,
+      win_rate: Number(winRate.toFixed(2)),
+      profit_factor: Number(profitFactor.toFixed(2)),
+      net_profit_usdt: Number(netProfit.toFixed(2)),
+      fees_paid_usdt: Number(totalFees.toFixed(2)),
+      max_drawdown_usdt: Number(maxDd.toFixed(2)),
+      sharpe_ratio: Number(sharpeRatio.toFixed(2)),
+      current_balance: this.getCredentials().account_balance_usdt,
+    };
+  }
+
+  public getEquityCurve(): { timestamp: string; balance: number }[] {
+    const trades = this.cache!.trades.filter((t) => t.exit_price !== null);
+    const sortedTradesAsc = [...trades].sort(
+      (a, b) => new Date(a.entry_timestamp).getTime() - new Date(b.entry_timestamp).getTime()
+    );
+
+    let runningBalance = 100000;
+    const curve = [{ timestamp: new Date(Date.now() - 3 * 24 * 3600000).toISOString(), balance: 100000 }];
+
+    sortedTradesAsc.forEach((t) => {
+      runningBalance += t.pnl_usdt || 0;
+      curve.push({
+        timestamp: t.exit_timestamp || t.entry_timestamp,
+        balance: Number(runningBalance.toFixed(2)),
+      });
+    });
+
+    return curve;
+  }
+
+  public getDailyBreakdown(): DailyStats[] {
+    const trades = this.cache!.trades.filter((t) => t.exit_price !== null);
+    const grouped: Record<string, Trade[]> = {};
+
+    trades.forEach((t) => {
+      const dateStr = t.entry_timestamp.split("T")[0];
+      if (!grouped[dateStr]) grouped[dateStr] = [];
+      grouped[dateStr].push(t);
+    });
+
+    const breakdown: DailyStats[] = [];
+
+    Object.keys(grouped)
+      .sort()
+      .forEach((date) => {
+        const dayTrades = grouped[date];
+        const dayWins = dayTrades.filter((t) => t.is_win);
+        const dayLosses = dayTrades.filter((t) => !t.is_win);
+        const dayWinsCount = dayWins.length;
+        const dayLossesCount = dayLosses.length;
+        const total = dayTrades.length;
+        const winRate = total > 0 ? (dayWinsCount / total) * 100 : 0;
+
+        const dayGrossProfit = dayWins.reduce((acc, t) => acc + (t.pnl_usdt || 0), 0);
+        const dayGrossLoss = Math.abs(dayLosses.reduce((acc, t) => acc + (t.pnl_usdt || 0), 0));
+        const profitFactor = dayGrossLoss > 0 ? dayGrossProfit / dayGrossLoss : dayGrossProfit > 0 ? 99.9 : 0;
+
+        const netProfit = dayTrades.reduce((acc, t) => acc + (t.pnl_usdt || 0), 0);
+
+        breakdown.push({
+          date,
+          total_trades: total,
+          wins: dayWinsCount,
+          losses: dayLossesCount,
+          win_rate: Number(winRate.toFixed(2)),
+          profit_factor: Number(profitFactor.toFixed(2)),
+          net_profit_usdt: Number(netProfit.toFixed(2)),
+          max_drawdown_usdt: 0, // Simplified daily drawdown
+        });
+      });
+
+    return breakdown;
+  }
+
+  public getPerformanceByRegime(): Record<string, { trades: number; win_rate: number; pnl: number }> {
+    const trades = this.cache!.trades.filter((t) => t.exit_price !== null);
+    const analysis: Record<string, { trades: number; wins: number; pnl: number }> = {
+      [MarketRegime.STRONG_UPTREND]: { trades: 0, wins: 0, pnl: 0 },
+      [MarketRegime.STRONG_DOWNTREND]: { trades: 0, wins: 0, pnl: 0 },
+      [MarketRegime.RANGE_BOUND]: { trades: 0, wins: 0, pnl: 0 },
+      [MarketRegime.HIGH_VOLATILITY]: { trades: 0, wins: 0, pnl: 0 },
+      [MarketRegime.LOW_VOLATILITY]: { trades: 0, wins: 0, pnl: 0 },
+    };
+
+    trades.forEach((t) => {
+      const r = t.regime_at_entry;
+      if (analysis[r]) {
+        analysis[r].trades += 1;
+        if (t.is_win) analysis[r].wins += 1;
+        analysis[r].pnl += t.pnl_usdt || 0;
+      }
+    });
+
+    const result: Record<string, { trades: number; win_rate: number; pnl: number }> = {};
+    Object.keys(analysis).forEach((r) => {
+      const data = analysis[r];
+      result[r] = {
+        trades: data.trades,
+        win_rate: data.trades > 0 ? Number(((data.wins / data.trades) * 100).toFixed(2)) : 0,
+        pnl: Number(data.pnl.toFixed(2)),
+      };
+    });
+
+    return result;
+  }
+}
+
+export const dbManager = new DatabaseManager();
