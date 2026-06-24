@@ -767,8 +767,16 @@ class TradingEngine {
     const stopLossDistance = lastAtr * config.risk_management.stop_loss_atr_multiplier;
     const takeProfitDistance = stopLossDistance * config.risk_management.take_profit_ratio;
 
-    const stopLossPrice = direction === TradeDirection.LONG ? entryPrice - stopLossDistance : entryPrice + stopLossDistance;
-    const takeProfitPrice = direction === TradeDirection.LONG ? entryPrice + takeProfitDistance : entryPrice - takeProfitDistance;
+    let stopLossPrice = direction === TradeDirection.LONG ? entryPrice - stopLossDistance : entryPrice + stopLossDistance;
+    let takeProfitPrice = direction === TradeDirection.LONG ? entryPrice + takeProfitDistance : entryPrice - takeProfitDistance;
+
+    // Support custom manual SL / TP values if set
+    if (this.activeTrade.feature_snapshot && typeof this.activeTrade.feature_snapshot.stop_loss_price === "number") {
+      stopLossPrice = this.activeTrade.feature_snapshot.stop_loss_price;
+    }
+    if (this.activeTrade.feature_snapshot && typeof this.activeTrade.feature_snapshot.take_profit_price === "number") {
+      takeProfitPrice = this.activeTrade.feature_snapshot.take_profit_price;
+    }
 
     // Calculate current PnL
     let rawPnL = 0;
@@ -887,6 +895,73 @@ class TradingEngine {
       return true;
     }
     return false;
+  }
+
+  // Create manual trade entry
+  public executeManualTradeEntry(
+    direction: "LONG" | "SHORT",
+    quantityBtc: number,
+    leverage: number,
+    stopLossPrice?: number | null,
+    takeProfitPrice?: number | null
+  ): { success: boolean; message: string; trade?: Trade } {
+    if (this.activeTrade) {
+      return {
+        success: false,
+        message: "An active position already exists. Please exit the active position first."
+      };
+    }
+
+    const currentPrice = this.currentPrice;
+    this.log(`Manual Trade execution request: ${direction} Qty=${quantityBtc} BTC, Leverage=${leverage}x`);
+
+    // Add trade to database
+    const feesPaid = Number((currentPrice * quantityBtc * 0.0006).toFixed(4));
+    
+    // Convert string inputs to proper types if necessary
+    const q = Number(quantityBtc);
+    const lev = Number(leverage);
+    const sl = stopLossPrice ? Number(stopLossPrice) : null;
+    const tp = takeProfitPrice ? Number(takeProfitPrice) : null;
+
+    const newTrade = dbManager.addTrade({
+      entry_timestamp: new Date().toISOString(),
+      exit_timestamp: null,
+      direction: direction === "LONG" ? TradeDirection.LONG : TradeDirection.SHORT,
+      entry_price: currentPrice,
+      exit_price: null,
+      quantity_btc: q,
+      leverage: lev,
+      pnl_usdt: 0,
+      pnl_pct: 0,
+      fees_paid_usdt: feesPaid,
+      exit_reason: null,
+      catboost_probability: direction === "LONG" ? 0.95 : 0.05,
+      regime_at_entry: this.currentRegime,
+      sentiment_score_at_entry: direction === "LONG" ? 0.5 : -0.5,
+      sentiment_momentum_at_entry: 0,
+      entry_signal_score: 100, // Manual execution max score
+      max_favorable_excursion: 0,
+      max_adverse_excursion: 0,
+      hold_duration_seconds: 0,
+      is_win: null,
+      feature_snapshot: {
+        last_price: currentPrice,
+        regime: this.currentRegime,
+        is_manual: true,
+        stop_loss_price: sl,
+        take_profit_price: tp,
+      },
+    });
+
+    this.activeTrade = newTrade;
+    this.log(`Manual trade successfully created and active. Trade ID: ${newTrade.id}`);
+
+    return {
+      success: true,
+      message: `Successfully opened ${direction} position at $${currentPrice}.`,
+      trade: newTrade
+    };
   }
 }
 

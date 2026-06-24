@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   RefreshCw,
   Server,
+  Zap,
 } from "lucide-react";
 import {
   Trade,
@@ -34,9 +35,10 @@ import Dashboard from "./components/Dashboard.tsx";
 import ConfigPage from "./components/ConfigPage.tsx";
 import TradeHistory from "./components/TradeHistory.tsx";
 import AnalyticsPage from "./components/AnalyticsPage.tsx";
+import ManualTradingPage from "./components/ManualTradingPage.tsx";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"dashboard" | "analytics" | "trades" | "config">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "analytics" | "trades" | "config" | "manual">("dashboard");
 
   // State Buffers
   const [status, setStatus] = useState<any>({
@@ -295,6 +297,15 @@ export default function App() {
             <BookOpen className="w-3.5 h-3.5" /> Historic Logs
           </button>
           <button
+            onClick={() => setActiveTab("manual")}
+            className={`flex items-center gap-2 px-4 py-2 text-xs font-medium font-sans rounded-lg transition-all cursor-pointer ${
+              activeTab === "manual" ? "bg-white text-indigo-600 font-semibold shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-800"
+            }`}
+            id="tab-manual"
+          >
+            <Zap className="w-3.5 h-3.5" /> Take Trades Manually
+          </button>
+          <button
             onClick={() => setActiveTab("config")}
             className={`flex items-center gap-2 px-4 py-2 text-xs font-medium font-sans rounded-lg transition-all cursor-pointer ${
               activeTab === "config" ? "bg-white text-indigo-600 font-semibold shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-800"
@@ -542,6 +553,13 @@ export default function App() {
             )}
 
             {activeTab === "trades" && <TradeHistory trades={trades} />}
+
+            {activeTab === "manual" && (
+              <ManualTradingPage
+                status={status}
+                onRefresh={fetchAllData}
+              />
+            )}
 
             {activeTab === "config" && config && (
               <ConfigPage

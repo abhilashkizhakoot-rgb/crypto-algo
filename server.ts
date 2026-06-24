@@ -180,6 +180,28 @@ async function startServer() {
     res.json({ executed, message: executed ? "Manual trade exit executed successfully." : "No active trade to exit." });
   });
 
+  app.post("/api/trading/manual-entry", (req, res) => {
+    const { direction, quantity_btc, leverage, stop_loss_price, take_profit_price } = req.body;
+    
+    if (!direction || !quantity_btc || !leverage) {
+      return res.status(400).json({ success: false, message: "Missing required fields: direction, quantity_btc, and leverage are required." });
+    }
+
+    const result = tradingEngine.executeManualTradeEntry(
+      direction,
+      parseFloat(quantity_btc),
+      parseInt(leverage, 10),
+      stop_loss_price ? parseFloat(stop_loss_price) : null,
+      take_profit_price ? parseFloat(take_profit_price) : null
+    );
+
+    if (!result.success) {
+      res.status(400).json(result);
+    } else {
+      res.json(result);
+    }
+  });
+
   // ----------------------------------------------------
   // REST API: Status & Live Feeds
   // ----------------------------------------------------

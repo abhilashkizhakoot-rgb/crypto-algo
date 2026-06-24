@@ -37,7 +37,7 @@ import {
 
 // High-fidelity custom SVG renderer for Candlestick bodies and wicks
 const CandlestickBar = (props: any) => {
-  const { x, y, width, height, payload } = props;
+  const { x, y, width, height, payload, yAxis } = props;
   if (x === undefined || y === undefined || width === undefined || height === undefined || !payload) {
     return null;
   }
@@ -46,19 +46,23 @@ const CandlestickBar = (props: any) => {
   const isBullish = close >= open;
   const color = isBullish ? "#10b981" : "#ef4444";
 
-  // Calculate wick coordinates using the body's scale
-  const bodyMax = Math.max(open, close);
-  const bodyMin = Math.min(open, close);
-  const bodyPriceDiff = bodyMax - bodyMin;
-
-  let highY = y;
-  let lowY = y + height;
-
+  // Calculate the price-to-pixel ratio using the body or the domain
+  let ratio = 1;
+  const bodyPriceDiff = Math.abs(open - close);
   if (bodyPriceDiff > 0.01) {
-    const ratio = height / bodyPriceDiff;
-    highY = y + (bodyMax - high) * ratio;
-    lowY = y + (bodyMax - low) * ratio;
+    ratio = height / bodyPriceDiff;
+  } else if (yAxis && yAxis.height && yAxis.domain) {
+    const domainDiff = Math.abs(yAxis.domain[1] - yAxis.domain[0]);
+    if (domainDiff > 0) {
+      ratio = yAxis.height / domainDiff;
+    }
   }
+
+  // Calculate precise SVG coordinates for wicks using the ratio
+  const maxOC = Math.max(open, close);
+  const minOC = Math.min(open, close);
+  const highY = y - (high - maxOC) * ratio;
+  const lowY = y + height + (minOC - low) * ratio;
 
   const cx = x + width / 2;
 
@@ -78,7 +82,7 @@ const CandlestickBar = (props: any) => {
         x={x}
         y={y}
         width={width}
-        height={Math.max(1, height)} // ensure at least 1px height
+        height={Math.max(1, height)}
         fill={color}
         stroke={color}
       />
@@ -198,24 +202,24 @@ export default function Dashboard({
     
     let currentClose = basePrice;
     
-    for (let i = 0; i <= 30; i++) {
+    // Generate 80 points backwards to accumulate enough history for mathematically correct EMAs
+    for (let i = 0; i < 80; i++) {
       const timeStr = new Date(now - i * 60000).toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
       });
 
-      // Generate random walk going backwards
-      const change = Math.sin(i * 0.45) * 120 + Math.cos(i * 0.15) * 60 + (Math.random() - 0.5) * 90;
+      // Standard random walk step with standard deviation + a tiny mean-reversion drift to keep it around the base price
+      const drift = (basePrice - currentClose) * 0.02;
+      const noise = (Math.random() - 0.5) * 160;
+      const change = noise + drift;
+      
       const open = Number((currentClose - change).toFixed(2));
       
       const maxOC = Math.max(open, currentClose);
       const minOC = Math.min(open, currentClose);
-      const high = Number((maxOC + Math.random() * 70).toFixed(2));
-      const low = Number((minOC - Math.random() * 70).toFixed(2));
-
-      // Calculate EMAs based on close price
-      const ema21 = Number((currentClose * 0.98 + (basePrice * 0.02)).toFixed(2));
-      const ema50 = Number((currentClose * 0.95 + (basePrice * 0.05)).toFixed(2));
+      const high = Number((maxOC + Math.random() * 80 + 10).toFixed(2));
+      const low = Number((minOC - Math.random() * 80 - 10).toFixed(2));
 
       tempPoints.push({
         time: timeStr,
@@ -224,15 +228,37 @@ export default function Dashboard({
         low,
         close: currentClose,
         price: currentClose, // keep price as close for back compatibility
-        ema21,
-        ema50,
       });
 
       currentClose = open;
     }
 
-    // Reverse so that the chronological order is oldest (left) to newest (right)
-    setChartData(tempPoints.reverse());
+    // Reverse so chronological order is oldest (left) to newest (right)
+    const sortedPoints = tempPoints.reverse();
+
+    // Now calculate mathematical EMA 21 and EMA 50 forward over the continuous series
+    const k21 = 2 / (21 + 1);
+    const k50 = 2 / (50 + 1);
+
+    let currentEma21 = sortedPoints[0].close;
+    let currentEma50 = sortedPoints[0].close;
+
+    sortedPoints.forEach((p, idx) => {
+      if (idx > 0) {
+        currentEma21 = p.close * k21 + currentEma21 * (1 - k21);
+        currentEma50 = p.close * k50 + currentEma50 * (1 - k50);
+      }
+      p.ema21 = Number(currentEma21.toFixed(2));
+      p.ema50 = Number(currentEma50.toFixed(2));
+      
+      // Ensure candlestickRange is [min, max] so Recharts Bar computes height and y correctly for both bullish and bearish candles
+      const minOC = Math.min(p.open, p.close);
+      const maxOC = Math.max(p.open, p.close);
+      p.candlestickRange = [minOC, maxOC];
+    });
+
+    // Take the last 30 points to display
+    setChartData(sortedPoints.slice(-30));
   }, [status.current_price]);
 
   // Determine sentiment score status color
@@ -503,7 +529,7 @@ export default function Dashboard({
                   <Line type="monotone" dataKey="low" stroke="none" dot={false} activeDot={false} legendType="none" />
                   
                   {/* Candlestick bodies and wicks */}
-                  <Bar dataKey="close" shape={<CandlestickBar />} />
+                  <Bar dataKey="candlestickRange" shape={<CandlestickBar />} />
                   
                   {/* EMA overlays */}
                   <Line type="monotone" dataKey="ema21" stroke="#3b82f6" strokeWidth={1.5} dot={false} strokeDasharray="3 3" />
