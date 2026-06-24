@@ -225,3 +225,18 @@ export interface Candlestick {
   close: number;
   volume: number;
 }
+
+export interface ApiCallLog {
+  id: string;
+  timestamp: string;
+  service: "Delta Exchange" | "Binance" | "RSS Feed" | "Unknown";
+  method: string;
+  url: string;
+  request_headers: Record<string, string>;
+  request_body?: string;
+  response_status: number;
+  response_headers?: Record<string, string>;
+  response_body: string;
+  latency_ms: number;
+}
+

@@ -107,14 +107,41 @@ class TradingEngine {
       const timeoutId = setTimeout(() => controller.abort(), 6000);
 
       // Public endpoint, returns last 100 1-minute candles
+      const startTime = Date.now();
       const res = await fetch(
         "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=100",
         { signal: controller.signal }
       );
+      const latencyMs = Date.now() - startTime;
       clearTimeout(timeoutId);
 
+      let responseText = "";
+      const responseStatus = res.status;
+      const respHeaders: Record<string, string> = {};
+      res.headers.forEach((val, key) => {
+        respHeaders[key] = val;
+      });
+
+      let data: any[][] = [];
       if (res.ok) {
-        const data: any[][] = await res.json();
+        data = await res.json();
+        responseText = `[Array of ${data.length} candlesticks fetched successfully]`;
+      } else {
+        responseText = await res.text();
+      }
+
+      dbManager.addApiLog({
+        service: "Binance",
+        method: "GET",
+        url: "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=100",
+        request_headers: { "User-Agent": "Delta-Exchange-Trading-Bot/1.0" },
+        response_status: responseStatus,
+        response_headers: respHeaders,
+        response_body: responseText,
+        latency_ms: latencyMs,
+      });
+
+      if (res.ok) {
         this.candles1m = data.map((c) => ({
           time: Math.floor(c[0] / 1000),
           open: parseFloat(c[1]),
@@ -174,12 +201,40 @@ class TradingEngine {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const startTime = Date.now();
       const res = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", {
         signal: controller.signal,
       });
+      const latencyMs = Date.now() - startTime;
       clearTimeout(timeoutId);
+
+      let responseText = "";
+      const responseStatus = res.status;
+      const respHeaders: Record<string, string> = {};
+      res.headers.forEach((val, key) => {
+        respHeaders[key] = val;
+      });
+
+      let data: any = null;
       if (res.ok) {
-        const data = await res.json();
+        data = await res.json();
+        responseText = JSON.stringify(data);
+      } else {
+        responseText = await res.text();
+      }
+
+      dbManager.addApiLog({
+        service: "Binance",
+        method: "GET",
+        url: "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT",
+        request_headers: { "User-Agent": "Delta-Exchange-Trading-Bot/1.0" },
+        response_status: responseStatus,
+        response_headers: respHeaders,
+        response_body: responseText,
+        latency_ms: latencyMs,
+      });
+
+      if (res.ok) {
         this.currentPrice = parseFloat(data.price);
       } else {
         throw new Error();

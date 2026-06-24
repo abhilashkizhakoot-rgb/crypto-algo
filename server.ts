@@ -102,13 +102,55 @@ async function startServer() {
         headers["api-timestamp"] = timestamp;
       }
 
+      const startTime = Date.now();
       const response = await fetch(`${baseUrl}${path}`, {
         method,
         headers
       });
+      const latencyMs = Date.now() - startTime;
+
+      let responseText = "";
+      const responseStatus = response.status;
+      const respHeaders: Record<string, string> = {};
+      response.headers.forEach((val, key) => {
+        respHeaders[key] = val;
+      });
+
+      const maskedRequestHeaders = { ...headers };
+      if (maskedRequestHeaders["api-key"]) {
+        const k = maskedRequestHeaders["api-key"];
+        maskedRequestHeaders["api-key"] = k.length > 8 ? k.substring(0, 4) + "..." + k.substring(k.length - 4) : "****";
+      }
+      if (maskedRequestHeaders["signature"]) {
+        const s = maskedRequestHeaders["signature"];
+        maskedRequestHeaders["signature"] = s.length > 6 ? "****" + s.substring(s.length - 6) : "****";
+      }
+      if (maskedRequestHeaders["api-signature"]) {
+        const s = maskedRequestHeaders["api-signature"];
+        maskedRequestHeaders["api-signature"] = s.length > 6 ? "****" + s.substring(s.length - 6) : "****";
+      }
+
+      let data: any = null;
+      if (response.ok) {
+        data = await response.json();
+        responseText = JSON.stringify(data, null, 2);
+      } else {
+        responseText = await response.text();
+      }
+
+      dbManager.addApiLog({
+        service: "Delta Exchange",
+        method,
+        url: `${baseUrl}${path}`,
+        request_headers: maskedRequestHeaders,
+        request_body: payload || undefined,
+        response_status: responseStatus,
+        response_headers: respHeaders,
+        response_body: responseText,
+        latency_ms: latencyMs,
+      });
 
       if (response.ok) {
-        const data = await response.json();
         // Set actual balance from Delta if available, otherwise fallback to existing mock balance
         let balanceUsdt = creds.account_balance_usdt;
         if (data && data.result && Array.isArray(data.result)) {
@@ -124,7 +166,7 @@ async function startServer() {
           account_balance_usdt: balanceUsdt,
         });
       } else {
-        const errorText = await response.text();
+        const errorText = responseText;
         let errorMessage = `Authentication failed (HTTP ${response.status})`;
         try {
           const parsedError = JSON.parse(errorText);
@@ -245,6 +287,10 @@ async function startServer() {
     } else {
       res.json(trade);
     }
+  });
+
+  app.get("/api/debug/api-logs", (req, res) => {
+    res.json(dbManager.getApiLogs());
   });
 
   app.get("/api/signals", (req, res) => {

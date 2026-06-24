@@ -20,6 +20,7 @@ import {
   MarketRegime,
   NewsSource,
   DailyStats,
+  ApiCallLog,
 } from "./types.js";
 
 const DB_FILE_PATH = path.join(process.cwd(), "db_store.json");
@@ -473,6 +474,7 @@ function generateMockPaperHistory(): { credentials: ExchangeCredentials; trades:
 class DatabaseManager {
   private cache: DatabaseSchema | null = null;
   private paperCache: { credentials: ExchangeCredentials; trades: Trade[]; signals: TradingSignal[] } | null = null;
+  private apiLogs: ApiCallLog[] = [];
 
   constructor() {
     this.init();
@@ -925,6 +927,23 @@ class DatabaseManager {
         this.savePaper();
       }
     }
+  }
+
+  public addApiLog(log: Omit<ApiCallLog, "id" | "timestamp">) {
+    const fullLog: ApiCallLog = {
+      ...log,
+      id: "log_" + Math.random().toString(36).substring(2, 11),
+      timestamp: new Date().toISOString(),
+    };
+    this.apiLogs.unshift(fullLog);
+    if (this.apiLogs.length > 50) {
+      this.apiLogs.pop();
+    }
+    return fullLog;
+  }
+
+  public getApiLogs() {
+    return this.apiLogs;
   }
 }
 

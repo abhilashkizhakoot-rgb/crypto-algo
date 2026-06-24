@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Server,
   Zap,
+  Terminal,
 } from "lucide-react";
 import {
   Trade,
@@ -37,9 +38,10 @@ import ConfigPage from "./components/ConfigPage.tsx";
 import TradeHistory from "./components/TradeHistory.tsx";
 import AnalyticsPage from "./components/AnalyticsPage.tsx";
 import ManualTradingPage from "./components/ManualTradingPage.tsx";
+import ApiAnalyzer from "./components/ApiAnalyzer.tsx";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"dashboard" | "analytics" | "trades" | "config" | "manual">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "analytics" | "trades" | "config" | "manual" | "api_analyzer">("dashboard");
 
   // State Buffers
   const [status, setStatus] = useState<any>({
@@ -325,6 +327,15 @@ export default function App() {
             id="tab-config"
           >
             <Sliders className="w-3.5 h-3.5" /> Strategy Params
+          </button>
+          <button
+            onClick={() => setActiveTab("api_analyzer")}
+            className={`flex items-center gap-2 px-4 py-2 text-xs font-medium font-sans rounded-lg transition-all cursor-pointer ${
+              activeTab === "api_analyzer" ? "bg-white text-indigo-600 font-semibold shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-800"
+            }`}
+            id="tab-api-analyzer"
+          >
+            <Terminal className="w-3.5 h-3.5" /> API Analyzer
           </button>
         </nav>
 
@@ -630,6 +641,10 @@ export default function App() {
                 history={configHistory}
                 onRefresh={fetchAllData}
               />
+            )}
+
+            {activeTab === "api_analyzer" && (
+              <ApiAnalyzer isPaperMode={status?.is_paper_trading} />
             )}
           </motion.div>
         </AnimatePresence>
