@@ -22,6 +22,7 @@ import {
   Info,
 } from "lucide-react";
 import { Trade, TradeDirection } from "../types.js";
+import { safeFormatTime, safeFormatNumber } from "../utils/format";
 
 interface ManualTradingPageProps {
   status: {
@@ -413,7 +414,7 @@ export default function ManualTradingPage({ status, onRefresh }: ManualTradingPa
                       )}
 
                       <div className="text-[10.5px] font-mono text-rose-600 flex justify-between">
-                        <span>Trigger: ${computedSlPrice.toLocaleString()}</span>
+                        <span>Trigger: ${safeFormatNumber(computedSlPrice)}</span>
                         <span>Distance: {slPct.toFixed(2)}%</span>
                       </div>
                     </div>
@@ -483,7 +484,7 @@ export default function ManualTradingPage({ status, onRefresh }: ManualTradingPa
                       )}
 
                       <div className="text-[10.5px] font-mono text-emerald-600 flex justify-between">
-                        <span>Trigger: ${computedTpPrice.toLocaleString()}</span>
+                        <span>Trigger: ${safeFormatNumber(computedTpPrice)}</span>
                         <span>Distance: {tpPct.toFixed(2)}%</span>
                       </div>
                     </div>
@@ -577,7 +578,7 @@ export default function ManualTradingPage({ status, onRefresh }: ManualTradingPa
             </div>
 
             <div className="relative z-10 my-1">
-              <span className="font-mono text-3xl font-extrabold tracking-tight">${currentPrice?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span className="font-mono text-3xl font-extrabold tracking-tight">${safeFormatNumber(currentPrice, 2, 2)}</span>
             </div>
 
             <div className="flex justify-between items-center text-[10px] font-mono text-slate-400 border-t border-slate-800/80 pt-2.5 relative z-10">
@@ -598,7 +599,7 @@ export default function ManualTradingPage({ status, onRefresh }: ManualTradingPa
             
             <div className="flex justify-between text-slate-500 pb-2.5 border-b border-slate-100">
               <span>Account Equity:</span>
-              <span className="font-mono font-bold text-slate-800">${balance?.toLocaleString(undefined, { minimumFractionDigits: 2 })} USDT</span>
+              <span className="font-mono font-bold text-slate-800">${safeFormatNumber(balance, 2, 2)} USDT</span>
             </div>
 
             <div className="flex justify-between text-slate-500">
@@ -608,12 +609,12 @@ export default function ManualTradingPage({ status, onRefresh }: ManualTradingPa
 
             <div className="flex justify-between text-slate-500">
               <span>Notional Value:</span>
-              <span className="font-mono font-bold text-slate-800">${positionValue.toLocaleString(undefined, { minimumFractionDigits: 2 })} USDT</span>
+              <span className="font-mono font-bold text-slate-800">${safeFormatNumber(positionValue, 2, 2)} USDT</span>
             </div>
 
             <div className="flex justify-between text-slate-500">
               <span>Initial Margin Required:</span>
-              <span className="font-mono font-bold text-indigo-600">${marginRequired.toLocaleString(undefined, { minimumFractionDigits: 2 })} USDT</span>
+              <span className="font-mono font-bold text-indigo-600">${safeFormatNumber(marginRequired, 2, 2)} USDT</span>
             </div>
 
             <div className="flex justify-between text-slate-500">
@@ -625,14 +626,14 @@ export default function ManualTradingPage({ status, onRefresh }: ManualTradingPa
               <div className="flex justify-between text-slate-500">
                 <span>Stop Loss Distance:</span>
                 <span className="font-mono text-rose-600">
-                  {useSl ? `${slPct.toFixed(2)}% (${slType === "offset" ? `-$${slOffsetStr}` : `$${computedSlPrice.toLocaleString()}`})` : "None"}
+                  {useSl ? `${slPct.toFixed(2)}% (${slType === "offset" ? `-$${slOffsetStr}` : `$${safeFormatNumber(computedSlPrice)}`})` : "None"}
                 </span>
               </div>
 
               <div className="flex justify-between text-slate-500">
                 <span>Take Profit Distance:</span>
                 <span className="font-mono text-emerald-600">
-                  {useTp ? `${tpPct.toFixed(2)}% (${tpType === "offset" ? `+$${tpOffsetStr}` : `$${computedTpPrice.toLocaleString()}`})` : "None"}
+                  {useTp ? `${tpPct.toFixed(2)}% (${tpType === "offset" ? `+$${tpOffsetStr}` : `$${safeFormatNumber(computedTpPrice)}`})` : "None"}
                 </span>
               </div>
 
@@ -681,11 +682,11 @@ export default function ManualTradingPage({ status, onRefresh }: ManualTradingPa
                 <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-xs">
                   <div>
                     <span className="text-slate-400">Entry Price:</span>
-                    <p className="font-mono font-bold text-slate-800">${activeTrade.entry_price?.toLocaleString()}</p>
+                    <p className="font-mono font-bold text-slate-800">${safeFormatNumber(activeTrade.entry_price)}</p>
                   </div>
                   <div>
                     <span className="text-slate-400">Current Price:</span>
-                    <p className="font-mono font-bold text-slate-800">${currentPrice?.toLocaleString()}</p>
+                    <p className="font-mono font-bold text-slate-800">${safeFormatNumber(currentPrice)}</p>
                   </div>
                   <div>
                     <span className="text-slate-400">Quantity:</span>
@@ -693,7 +694,7 @@ export default function ManualTradingPage({ status, onRefresh }: ManualTradingPa
                   </div>
                   <div>
                     <span className="text-slate-400">Position Value:</span>
-                    <p className="font-mono font-bold text-slate-800">${(activeTrade.quantity_btc * currentPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })} USDT</p>
+                    <p className="font-mono font-bold text-slate-800">${safeFormatNumber(activeTrade.quantity_btc * currentPrice, 2, 2)} USDT</p>
                   </div>
                 </div>
 

@@ -29,6 +29,7 @@ import {
   ExchangeCredentials,
   ConnectionStatus,
 } from "./types.js";
+import { safeFormatTime } from "./utils/format";
 
 // Import modular components
 import Dashboard from "./components/Dashboard.tsx";
@@ -179,17 +180,26 @@ export default function App() {
     fetchAllData();
 
     // 1. Establish SSE Server Sent Events Real-Time Stream
-    const eventSource = new EventSource("/api/stream");
-    eventSource.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (msg.type === "status") {
-          setStatus(msg.payload);
+    let eventSource: EventSource | null = null;
+    try {
+      const sseUrl = new URL("/api/stream", window.location.href).href;
+      eventSource = new EventSource(sseUrl);
+      eventSource.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "status") {
+            setStatus(msg.payload);
+          }
+        } catch (e) {
+          console.error("Failed to parse live stream chunk:", e);
         }
-      } catch (e) {
-        console.error("Failed to parse live stream chunk:", e);
-      }
-    };
+      };
+      eventSource.onerror = (e) => {
+        console.error("SSE stream encountered an error:", e);
+      };
+    } catch (err) {
+      console.warn("SSE EventSource not supported or failed to initialize, relying on fallback polling:", err);
+    }
 
     // 2. Fallback Polling loop every 3 seconds to sync trades list and graphs
     const interval = setInterval(() => {
@@ -197,7 +207,9 @@ export default function App() {
     }, 3000);
 
     return () => {
-      eventSource.close();
+      if (eventSource) {
+        eventSource.close();
+      }
       clearInterval(interval);
     };
   }, []);
@@ -496,7 +508,7 @@ export default function App() {
                           {credentials.connection_status}
                         </div>
                         <div className="text-[10px] text-slate-400 font-sans">
-                          Last checked: {credentials.last_tested_at ? new Date(credentials.last_tested_at).toLocaleTimeString() : "Never"}
+                          Last checked: {credentials.last_tested_at ? safeFormatTime(credentials.last_tested_at) : "Never"}
                         </div>
                       </div>
                     </div>
@@ -596,7 +608,13 @@ export default function App() {
               />
             )}
 
-            {activeTab === "trades" && <TradeHistory trades={trades} />}
+            {activeTab === "trades" && (
+              <TradeHistory
+                trades={trades}
+                isPaperMode={status?.is_paper_trading}
+                onRefresh={fetchAllData}
+              />
+            )}
 
             {activeTab === "manual" && (
               <ManualTradingPage

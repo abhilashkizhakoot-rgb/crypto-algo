@@ -911,6 +911,21 @@ class DatabaseManager {
 
     return result;
   }
+
+  public clearTrades(mode: "live" | "paper" | "both") {
+    if (mode === "live" || mode === "both") {
+      if (this.cache) {
+        this.cache.trades = [];
+        this.save();
+      }
+    }
+    if (mode === "paper" || mode === "both") {
+      if (this.paperCache) {
+        this.paperCache.trades = [];
+        this.savePaper();
+      }
+    }
+  }
 }
 
 export const dbManager = new DatabaseManager();

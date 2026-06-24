@@ -36,6 +36,7 @@ import {
   ResponsiveContainer,
   ReferenceDot,
 } from "recharts";
+import { safeFormatTime, safeFormatNumber } from "../utils/format";
 
 // High-fidelity custom SVG renderer for Candlestick bodies and wicks
 const CandlestickBar = (props: any) => {
@@ -103,30 +104,30 @@ const CustomTooltip = ({ active, payload, label }: any) => {
         <div className="grid grid-cols-2 gap-x-4 gap-y-1">
           <div>
             <span className="text-slate-400">Open:</span>{" "}
-            <span className="font-mono font-semibold text-slate-700">${data.open?.toLocaleString()}</span>
+            <span className="font-mono font-semibold text-slate-700">${safeFormatNumber(data.open)}</span>
           </div>
           <div>
             <span className="text-slate-400">High:</span>{" "}
-            <span className="font-mono font-semibold text-emerald-600">${data.high?.toLocaleString()}</span>
+            <span className="font-mono font-semibold text-emerald-600">${safeFormatNumber(data.high)}</span>
           </div>
           <div>
             <span className="text-slate-400">Low:</span>{" "}
-            <span className="font-mono font-semibold text-rose-600">${data.low?.toLocaleString()}</span>
+            <span className="font-mono font-semibold text-rose-600">${safeFormatNumber(data.low)}</span>
           </div>
           <div>
             <span className="text-slate-400">Close:</span>{" "}
             <span className={`font-mono font-semibold ${isBullish ? "text-emerald-600" : "text-rose-600"}`}>
-              ${data.close?.toLocaleString()}
+              ${safeFormatNumber(data.close)}
             </span>
           </div>
           <div className="col-span-2 border-t border-slate-100 my-1 pt-1 flex flex-col gap-0.5">
             <div className="flex justify-between">
               <span className="text-slate-400">EMA 21:</span>{" "}
-              <span className="font-mono text-blue-600">${data.ema21?.toLocaleString()}</span>
+              <span className="font-mono text-blue-600">${safeFormatNumber(data.ema21)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">EMA 50:</span>{" "}
-              <span className="font-mono text-amber-600">${data.ema50?.toLocaleString()}</span>
+              <span className="font-mono text-amber-600">${safeFormatNumber(data.ema50)}</span>
             </div>
           </div>
         </div>
@@ -223,7 +224,7 @@ export default function Dashboard({
 
           // Format timestamp to local time string (e.g. "02:43 PM")
           const formattedTime = p.time 
-            ? new Date(p.time * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+            ? safeFormatTime(p.time * 1000)
             : p.time;
 
           return {
@@ -350,7 +351,7 @@ export default function Dashboard({
               <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
                 <p className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Account Equity</p>
                 <p className="text-sm font-sans font-bold text-slate-800 mt-1">
-                  ${status.account_balance_usdt?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${safeFormatNumber(status.account_balance_usdt, 2, 2)}
                 </p>
               </div>
               <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
@@ -404,7 +405,7 @@ export default function Dashboard({
                   <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-xs text-slate-600">
                     <div>
                       <p className="font-mono text-slate-400 uppercase text-[10px]">Entry Price</p>
-                      <p className="font-sans font-semibold text-slate-800 mt-0.5">${activeTrade.entry_price.toLocaleString()}</p>
+                      <p className="font-sans font-semibold text-slate-800 mt-0.5">${safeFormatNumber(activeTrade.entry_price)}</p>
                     </div>
                     <div>
                       <p className="font-mono text-slate-400 uppercase text-[10px]">Position Size</p>
@@ -474,7 +475,7 @@ export default function Dashboard({
             <div>
               <p className="text-[10px] font-mono text-slate-400 uppercase leading-none">Bitcoin (USDT)</p>
               <p className="text-xl font-sans font-bold text-slate-800 mt-1 leading-none">
-                ${status.current_price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ${safeFormatNumber(status.current_price, 2, 2)}
               </p>
             </div>
           </div>
@@ -671,7 +672,7 @@ export default function Dashboard({
                   </span>
                 </div>
                 <p className="text-[10px] font-sans leading-relaxed text-slate-700 font-medium">{hl.headline}</p>
-                <p className="text-[8px] font-mono text-slate-400 mt-1">{new Date(hl.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+                <p className="text-[8px] font-mono text-slate-400 mt-1">{safeFormatTime(hl.timestamp)}</p>
               </div>
             ))}
             {headlines.length === 0 && <p className="text-slate-400 font-mono text-center text-[10px] py-10 italic">Waiting for incoming news ticker...</p>}

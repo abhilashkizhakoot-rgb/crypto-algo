@@ -14,18 +14,60 @@ import {
   Activity,
   DollarSign,
   Filter,
+  Trash2,
+  AlertTriangle,
+  RefreshCw,
 } from "lucide-react";
 import { Trade, TradeDirection, ExitReason, MarketRegime } from "../types.js";
+import { safeFormatTime, safeFormatDate, safeFormatNumber } from "../utils/format";
 
 interface TradeHistoryProps {
   trades: Trade[];
+  isPaperMode?: boolean;
+  onRefresh?: () => void;
 }
 
-export default function TradeHistory({ trades }: TradeHistoryProps) {
+export default function TradeHistory({ trades, isPaperMode = true, onRefresh }: TradeHistoryProps) {
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
   const [directionFilter, setDirectionFilter] = useState<"ALL" | "LONG" | "SHORT">("ALL");
   const [winFilter, setWinFilter] = useState<"ALL" | "WINS" | "LOSSES">("ALL");
   const [reasonFilter, setReasonFilter] = useState<"ALL" | ExitReason>("ALL");
+
+  // Clear modal states
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [clearMode, setClearMode] = useState<"live" | "paper" | "both">(isPaperMode ? "paper" : "live");
+  const [isClearing, setIsClearing] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const handleClearSubmit = async () => {
+    setIsClearing(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/trading/clear-history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: clearMode }),
+      });
+      if (response.ok) {
+        const result = await response.json();
+        setMessage(result.message || "History cleared successfully.");
+        if (onRefresh) {
+          onRefresh();
+        }
+        setTimeout(() => {
+          setShowClearModal(false);
+          setMessage(null);
+        }, 1500);
+      } else {
+        const errorData = await response.json();
+        setMessage(`Error: ${errorData.message || "Failed to clear history."}`);
+      }
+    } catch (err: any) {
+      setMessage(`Error: ${err.message || "Network error."}`);
+    } finally {
+      setIsClearing(false);
+    }
+  };
 
   const toggleSelectTrade = (id: string) => {
     setSelectedTradeId(selectedTradeId === id ? null : id);
@@ -111,6 +153,16 @@ export default function TradeHistory({ trades }: TradeHistoryProps) {
               <option value={ExitReason.MANUAL_EXIT}>Manual User Exit</option>
             </select>
           </div>
+
+          {/* Clear History Button */}
+          <button
+            onClick={() => setShowClearModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 rounded-lg text-xs font-sans font-semibold border border-rose-100 hover:border-rose-200 transition-colors cursor-pointer"
+            title="Clear trade logs"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Clear History
+          </button>
         </div>
       </div>
 
@@ -142,7 +194,7 @@ export default function TradeHistory({ trades }: TradeHistoryProps) {
                       }`}
                     >
                       <td className="py-3.5 px-4 font-mono text-slate-500">
-                        {new Date(t.entry_timestamp).toLocaleDateString()} {new Date(t.entry_timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        {safeFormatTime(t.entry_timestamp, true)}
                       </td>
                       <td className="py-3.5 px-4">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${
@@ -156,10 +208,10 @@ export default function TradeHistory({ trades }: TradeHistoryProps) {
                         {t.quantity_btc} BTC
                       </td>
                       <td className="py-3.5 px-4 font-mono text-slate-500">
-                        ${t.entry_price.toLocaleString()}
+                        ${safeFormatNumber(t.entry_price)}
                       </td>
                       <td className="py-3.5 px-4 font-mono text-slate-500">
-                        {t.exit_price ? `$${t.exit_price.toLocaleString()}` : "Active..."}
+                        {t.exit_price ? `$${safeFormatNumber(t.exit_price)}` : "Active..."}
                       </td>
                       <td className="py-3.5 px-4">
                         {t.exit_reason ? (
@@ -171,7 +223,7 @@ export default function TradeHistory({ trades }: TradeHistoryProps) {
                         )}
                       </td>
                       <td className={`py-3.5 px-4 text-right font-sans font-bold text-sm ${t.pnl_usdt && t.pnl_usdt >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                        {t.pnl_usdt ? `${t.pnl_usdt >= 0 ? "+" : ""}$${t.pnl_usdt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Active"}
+                        {t.pnl_usdt ? `${t.pnl_usdt >= 0 ? "+" : ""}$${safeFormatNumber(t.pnl_usdt, 2, 2)}` : "Active"}
                       </td>
                       <td className="py-3.5 px-4 text-slate-400">
                         {isSelected ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -264,6 +316,107 @@ export default function TradeHistory({ trades }: TradeHistoryProps) {
           </table>
         </div>
       </div>
+
+      {/* Clear Confirmation Modal */}
+      {showClearModal && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-6">
+              <div className="flex items-start gap-4">
+                <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center text-rose-600 shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="font-sans font-bold text-base text-slate-800">Clear Trade History</h3>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    This action will permanently delete historical trade logs. This cannot be undone. Please select which history you want to clear:
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 space-y-2.5">
+                <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                  clearMode === "paper" ? "border-indigo-500 bg-indigo-50/30" : "border-slate-100 hover:bg-slate-50"
+                }`}>
+                  <input
+                    type="radio"
+                    name="clearMode"
+                    checked={clearMode === "paper"}
+                    onChange={() => setClearMode("paper")}
+                    className="text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                  />
+                  <div>
+                    <p className="text-xs font-sans font-bold text-slate-800">Paper Trading History</p>
+                    <p className="text-[10px] text-slate-400 font-mono mt-0.5">Clears simulated paper trades only</p>
+                  </div>
+                </label>
+
+                <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                  clearMode === "live" ? "border-indigo-500 bg-indigo-50/30" : "border-slate-100 hover:bg-slate-50"
+                }`}>
+                  <input
+                    type="radio"
+                    name="clearMode"
+                    checked={clearMode === "live"}
+                    onChange={() => setClearMode("live")}
+                    className="text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                  />
+                  <div>
+                    <p className="text-xs font-sans font-bold text-slate-800">Real Account Trading History</p>
+                    <p className="text-[10px] text-slate-400 font-mono mt-0.5">Clears actual connected exchange trades only</p>
+                  </div>
+                </label>
+
+                <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                  clearMode === "both" ? "border-indigo-500 bg-indigo-50/30" : "border-slate-100 hover:bg-slate-50"
+                }`}>
+                  <input
+                    type="radio"
+                    name="clearMode"
+                    checked={clearMode === "both"}
+                    onChange={() => setClearMode("both")}
+                    className="text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                  />
+                  <div>
+                    <p className="text-xs font-sans font-bold text-slate-800">All Trading History</p>
+                    <p className="text-[10px] text-slate-400 font-mono mt-0.5">Clears both live and paper trades completely</p>
+                  </div>
+                </label>
+              </div>
+
+              {message && (
+                <div className="mt-4 p-2.5 rounded-lg bg-emerald-50 border border-emerald-100 text-emerald-800 text-xs font-medium text-center">
+                  {message}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-slate-50 px-6 py-4 flex items-center justify-end gap-3 border-t border-slate-100">
+              <button
+                disabled={isClearing}
+                onClick={() => setShowClearModal(false)}
+                className="px-4 py-2 text-xs font-sans font-semibold text-slate-500 hover:text-slate-800 bg-transparent rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={isClearing}
+                onClick={handleClearSubmit}
+                className="flex items-center gap-1.5 px-4 py-2 text-xs font-sans font-semibold text-white bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 rounded-lg shadow-sm transition-colors cursor-pointer"
+              >
+                {isClearing ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    Clearing...
+                  </>
+                ) : (
+                  "Clear Selected"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

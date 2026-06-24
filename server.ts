@@ -181,6 +181,15 @@ async function startServer() {
     res.json({ success: true, is_paper_trading: dbManager.isPaperMode() });
   });
 
+  app.post("/api/trading/clear-history", (req, res) => {
+    const { mode } = req.body;
+    if (!mode || !["live", "paper", "both"].includes(mode)) {
+      return res.status(400).json({ success: false, message: "Invalid clear mode requested." });
+    }
+    dbManager.clearTrades(mode as any);
+    res.json({ success: true, message: `Successfully cleared trade history for ${mode} trading.` });
+  });
+
   app.post("/api/trading/force-exit", (req, res) => {
     const executed = tradingEngine.forceExit();
     res.json({ executed, message: executed ? "Manual trade exit executed successfully." : "No active trade to exit." });

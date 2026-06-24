@@ -27,6 +27,7 @@ import {
   Cell,
 } from "recharts";
 import { DailyStats, MarketRegime } from "../types.js";
+import { safeFormatDateTimeShort, safeFormatDateShort, safeFormatNumber } from "../utils/format";
 
 interface AnalyticsPageProps {
   summary: any;
@@ -44,19 +45,12 @@ export default function AnalyticsPage({
   // Format dates for charts
   const formattedEquityData = equityCurve.map((pt) => ({
     ...pt,
-    time: new Date(pt.timestamp).toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-    }),
+    time: safeFormatDateTimeShort(pt.timestamp),
   }));
 
   const formattedDailyData = dailyStats.map((d) => ({
     ...d,
-    dateStr: new Date(d.date + "T00:00:00").toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-    }),
+    dateStr: safeFormatDateShort(d.date + "T00:00:00"),
   }));
 
   // Format regime data for charting
@@ -74,7 +68,7 @@ export default function AnalyticsPage({
         <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-5">
           <p className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Net Profit (USDT)</p>
           <p className={`text-xl font-sans font-extrabold mt-1 ${summary.net_profit_usdt >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-            {summary.net_profit_usdt >= 0 ? "+" : ""}${summary.net_profit_usdt?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            {summary.net_profit_usdt >= 0 ? "+" : ""}${safeFormatNumber(summary.net_profit_usdt, 2, 2)}
           </p>
           <div className="flex items-center gap-1.5 mt-2 text-[10px] text-slate-400 font-mono">
             <span>Commissions:</span>
@@ -112,7 +106,7 @@ export default function AnalyticsPage({
           </p>
           <div className="flex items-center gap-1.5 mt-2 text-[10px] text-slate-400 font-mono">
             <span>Drawdown:</span>
-            <span className="text-rose-600 font-semibold">${summary.max_drawdown_usdt?.toLocaleString()}</span>
+            <span className="text-rose-600 font-semibold">${safeFormatNumber(summary.max_drawdown_usdt)}</span>
           </div>
         </div>
       </div>
@@ -141,13 +135,13 @@ export default function AnalyticsPage({
                 fontSize={9}
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={(val) => `$${val.toLocaleString()}`}
+                tickFormatter={(val) => `$${safeFormatNumber(val)}`}
               />
               <Tooltip
                 contentStyle={{ backgroundColor: "#ffffff", borderColor: "#e2e8f0" }}
                 labelStyle={{ color: "#64748b", fontSize: "10px" }}
                 itemStyle={{ fontSize: "11px", color: "#1e293b" }}
-                formatter={(val) => [`$${val.toLocaleString()}`, "Balance"]}
+                formatter={(val: any) => [`$${safeFormatNumber(val)}`, "Balance"]}
               />
               <Area type="monotone" dataKey="balance" stroke="#4f46e5" strokeWidth={2} fillOpacity={1} fill="url(#colorBalance)" />
             </AreaChart>
