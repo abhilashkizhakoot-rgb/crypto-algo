@@ -21,7 +21,7 @@ import {
   ShieldAlert,
   Info,
 } from "lucide-react";
-import { Trade, TradeDirection } from "../types.js";
+import { Trade, TradeDirection, StrategyConfig } from "../types.js";
 import { safeFormatTime, safeFormatNumber } from "../utils/format";
 
 interface ManualTradingPageProps {
@@ -36,18 +36,35 @@ interface ManualTradingPageProps {
     active_trade: Trade | null;
     account_balance_usdt: number;
   };
+  config?: StrategyConfig | null;
   onRefresh: () => void;
 }
 
-export default function ManualTradingPage({ status, onRefresh }: ManualTradingPageProps) {
+export default function ManualTradingPage({ status, config, onRefresh }: ManualTradingPageProps) {
   const currentPrice = status.current_price;
   const balance = status.account_balance_usdt;
   const activeTrade = status.active_trade;
 
   // Form State
   const [direction, setDirection] = useState<"LONG" | "SHORT">("LONG");
-  const [leverage, setLeverage] = useState<number>(20);
-  const [quantityStr, setQuantityStr] = useState<string>("0.1");
+  const [leverage, setLeverage] = useState<number>(config?.risk_management?.leverage || 20);
+  const [quantityStr, setQuantityStr] = useState<string>(
+    config?.risk_management?.default_quantity_btc !== undefined 
+      ? config.risk_management.default_quantity_btc.toString() 
+      : "0.001"
+  );
+
+  // Update leverage and default quantity when config loads or changes
+  useEffect(() => {
+    if (config?.risk_management) {
+      if (config.risk_management.leverage !== undefined) {
+        setLeverage(config.risk_management.leverage);
+      }
+      if (config.risk_management.default_quantity_btc !== undefined) {
+        setQuantityStr(config.risk_management.default_quantity_btc.toString());
+      }
+    }
+  }, [config?.risk_management?.default_quantity_btc, config?.risk_management?.leverage]);
 
   // Stop Loss State
   const [useSl, setUseSl] = useState<boolean>(true);

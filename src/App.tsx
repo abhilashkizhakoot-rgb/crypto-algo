@@ -39,9 +39,10 @@ import TradeHistory from "./components/TradeHistory.tsx";
 import AnalyticsPage from "./components/AnalyticsPage.tsx";
 import ManualTradingPage from "./components/ManualTradingPage.tsx";
 import ApiAnalyzer from "./components/ApiAnalyzer.tsx";
+import CheckpointsPage from "./components/CheckpointsPage.tsx";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"dashboard" | "analytics" | "trades" | "config" | "manual" | "api_analyzer">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "analytics" | "trades" | "config" | "manual" | "api_analyzer" | "checkpoints">("dashboard");
 
   // State Buffers
   const [status, setStatus] = useState<any>({
@@ -117,7 +118,7 @@ export default function App() {
   const [testingConnection, setTestingConnection] = useState(false);
 
   // Synchronize all REST datasets
-  const fetchAllData = async () => {
+  const fetchAllData = async (forceConfig = true) => {
     try {
       // Server Status
       const statusRes = await fetch("/api/status");
@@ -152,14 +153,16 @@ export default function App() {
       if (logsRes.ok) setLogs(await logsRes.json());
 
       // Configuration
-      const configRes = await fetch("/api/config");
-      if (configRes.ok) setConfig(await configRes.json());
+      if (forceConfig || !config) {
+        const configRes = await fetch("/api/config");
+        if (configRes.ok) setConfig(await configRes.json());
 
-      const profilesRes = await fetch("/api/config/profiles");
-      if (profilesRes.ok) setProfiles(await profilesRes.json());
+        const profilesRes = await fetch("/api/config/profiles");
+        if (profilesRes.ok) setProfiles(await profilesRes.json());
 
-      const configHistoryRes = await fetch("/api/config/history");
-      if (configHistoryRes.ok) setConfigHistory(await configHistoryRes.json());
+        const configHistoryRes = await fetch("/api/config/history");
+        if (configHistoryRes.ok) setConfigHistory(await configHistoryRes.json());
+      }
 
       // Quantitative Analytics
       const summaryRes = await fetch("/api/analytics/summary");
@@ -205,7 +208,7 @@ export default function App() {
 
     // 2. Fallback Polling loop every 3 seconds to sync trades list and graphs
     const interval = setInterval(() => {
-      fetchAllData();
+      fetchAllData(false);
     }, 3000);
 
     return () => {
@@ -318,6 +321,15 @@ export default function App() {
             id="tab-manual"
           >
             <Zap className="w-3.5 h-3.5" /> Take Trades Manually
+          </button>
+          <button
+            onClick={() => setActiveTab("checkpoints")}
+            className={`flex items-center gap-2 px-4 py-2 text-xs font-medium font-sans rounded-lg transition-all cursor-pointer ${
+              activeTab === "checkpoints" ? "bg-white text-indigo-600 font-semibold shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-800"
+            }`}
+            id="tab-checkpoints"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" /> Checkpoints radar
           </button>
           <button
             onClick={() => setActiveTab("config")}
@@ -630,7 +642,16 @@ export default function App() {
             {activeTab === "manual" && (
               <ManualTradingPage
                 status={status}
+                config={config}
                 onRefresh={fetchAllData}
+              />
+            )}
+
+            {activeTab === "checkpoints" && (
+              <CheckpointsPage
+                status={status}
+                onRefresh={fetchAllData}
+                onTabChange={setActiveTab}
               />
             )}
 

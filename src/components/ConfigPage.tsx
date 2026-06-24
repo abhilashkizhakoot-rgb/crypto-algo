@@ -364,6 +364,20 @@ export default function ConfigPage({
                 />
                 <p className="text-[10px] text-slate-400">Stops trading until next day UTC 00:00 when hit (Strict limit: 2.0%)</p>
               </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-400 uppercase">Default Trading Quantity (BTC)</label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  min="0.0001"
+                  value={riskConfig.default_quantity_btc !== undefined ? riskConfig.default_quantity_btc : 0.001}
+                  onChange={(e) => setRiskConfig({ ...riskConfig, default_quantity_btc: parseFloat(e.target.value) || 0.001 })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 outline-none font-mono"
+                  id="config-default-quantity-btc"
+                />
+                <p className="text-[10px] text-slate-400">Position size for auto-signals and default for manual entries (e.g. 0.001 BTC)</p>
+              </div>
             </div>
 
             <div className="border-t border-slate-200 pt-5 flex justify-end">
