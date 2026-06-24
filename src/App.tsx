@@ -67,6 +67,7 @@ export default function App() {
     product_id: 1,
     product_symbol: "BTCUSD-FUTURES",
     is_testnet: false,
+    is_india: false,
     created_at: "",
     updated_at: "",
   });
@@ -107,6 +108,7 @@ export default function App() {
   const [formApiSecret, setFormApiSecret] = useState("");
   const [formEmail, setFormEmail] = useState("");
   const [formIsTestnet, setFormIsTestnet] = useState(false);
+  const [formIsIndia, setFormIsIndia] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
 
   // Synchronize all REST datasets
@@ -127,6 +129,7 @@ export default function App() {
           setFormApiSecret(credsData.api_secret || "");
           setFormEmail(credsData.account_email || "");
           setFormIsTestnet(credsData.is_testnet || false);
+          setFormIsIndia(credsData.is_india || false);
         }
       }
 
@@ -211,6 +214,7 @@ export default function App() {
           api_secret: formApiSecret,
           account_email: formEmail,
           is_testnet: formIsTestnet,
+          is_india: formIsIndia,
         }),
       });
 
@@ -311,6 +315,7 @@ export default function App() {
                 setFormApiSecret(credentials.api_secret || "");
                 setFormEmail(credentials.account_email || "");
                 setFormIsTestnet(credentials.is_testnet || false);
+                setFormIsIndia(credentials.is_india || false);
               }
               setShowExchangePanel(!showExchangePanel);
             }}
@@ -380,7 +385,7 @@ export default function App() {
                       />
                     </div>
 
-                    <div className="flex items-center gap-3 pt-5">
+                    <div className="flex flex-col gap-3 pt-5">
                       <label className="flex items-center gap-2 cursor-pointer font-sans text-slate-500 hover:text-slate-800">
                         <input
                           type="checkbox"
@@ -389,6 +394,19 @@ export default function App() {
                           className="rounded border-slate-300 bg-slate-50 text-indigo-600 focus:ring-0"
                         />
                         <span>Deploy on Delta Mock-Testnet environment</span>
+                      </label>
+
+                      <label className="flex items-center gap-2 cursor-pointer font-sans text-slate-500 hover:text-slate-800">
+                        <input
+                          type="checkbox"
+                          checked={formIsIndia}
+                          onChange={(e) => setFormIsIndia(e.target.checked)}
+                          className="rounded border-slate-300 bg-slate-50 text-indigo-600 focus:ring-0"
+                        />
+                        <span className="flex items-center gap-1.5">
+                          <span>Use Delta India APIs (api.deltaexchange.in)</span>
+                          <span className="text-[10px] font-mono bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded uppercase font-semibold">India</span>
+                        </span>
                       </label>
                     </div>
                   </div>

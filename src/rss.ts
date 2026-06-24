@@ -14,9 +14,10 @@ export interface RSSArticle {
 }
 
 const FEEDS = [
-  { url: "https://cointelegraph.com/rss", source: NewsSource.COINTELEGRAPH },
-  { url: "https://www.coindesk.com/arc/outboundfeed/rss/", source: NewsSource.COINDESK },
-  { url: "https://hnrss.org/newest?q=bitcoin", source: NewsSource.THEBLOCK }, // hacker news search fallback for block news
+  { url: "https://news.google.com/rss/search?q=site:cointelegraph.com+bitcoin&hl=en-US&gl=US&ceid=US:en", source: NewsSource.COINTELEGRAPH },
+  { url: "https://news.google.com/rss/search?q=site:coindesk.com+bitcoin&hl=en-US&gl=US&ceid=US:en", source: NewsSource.COINDESK },
+  { url: "https://news.google.com/rss/search?q=site:theblock.co+bitcoin&hl=en-US&gl=US&ceid=US:en", source: NewsSource.THEBLOCK },
+  { url: "https://news.google.com/rss/search?q=site:bitcoinmagazine.com+bitcoin&hl=en-US&gl=US&ceid=US:en", source: NewsSource.BITCOIN_MAGAZINE },
 ];
 
 // Fallback pool of high-fidelity crypto headlines matching actual market contexts
@@ -65,7 +66,7 @@ const FALLBACK_HEADLINES: RSSArticle[] = [
 
 export async function fetchLiveRSSHeadlines(): Promise<RSSArticle[]> {
   const parser = new Parser({
-    timeout: 4000,
+    timeout: 8000,
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     },
@@ -89,7 +90,7 @@ export async function fetchLiveRSSHeadlines(): Promise<RSSArticle[]> {
         }
       }
     } catch (e) {
-      console.warn(`[RSS-Scraper] Failed to fetch feed ${feed.url}:`, (e as Error).message);
+      console.warn(`[RSS-Scraper] Skip feed ${feed.url} due to:`, (e as Error).message);
     }
   }
 

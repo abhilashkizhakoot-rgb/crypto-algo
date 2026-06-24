@@ -60,6 +60,7 @@ export interface ExchangeCredentials {
   product_id: number;
   product_symbol: string;
   is_testnet: boolean;
+  is_india: boolean;
   created_at: string;
   updated_at: string;
 }

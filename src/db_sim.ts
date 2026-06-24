@@ -111,6 +111,7 @@ const DEFAULT_CREDENTIALS: ExchangeCredentials = {
   product_id: 1,
   product_symbol: "BTCUSD-FUTURES",
   is_testnet: false,
+  is_india: false,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
 };

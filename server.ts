@@ -73,7 +73,12 @@ async function startServer() {
     }
 
     try {
-      const baseUrl = creds.is_testnet ? "https://testnet-api.delta.exchange" : "https://api.delta.exchange";
+      let baseUrl = "https://api.delta.exchange";
+      if (creds.is_india) {
+        baseUrl = creds.is_testnet ? "https://testnet-api.deltaexchange.in" : "https://api.deltaexchange.in";
+      } else {
+        baseUrl = creds.is_testnet ? "https://testnet-api.delta.exchange" : "https://api.delta.exchange";
+      }
       const path = "/v2/wallet/balances";
       const timestamp = Math.floor(Date.now() / 1000).toString();
       const method = "GET";
