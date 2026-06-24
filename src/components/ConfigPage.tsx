@@ -64,6 +64,29 @@ export default function ConfigPage({
     }
   };
 
+  const handleSaveRiskAndGeneral = async () => {
+    try {
+      const resGeneral = await fetch(`/api/config/general`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(generalConfig),
+      });
+      const resRisk = await fetch(`/api/config/risk_management`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(riskConfig),
+      });
+      if (resGeneral.ok && resRisk.ok) {
+        onRefresh();
+        alert("Success: General & Risk Management parameters successfully committed to DB.");
+      } else {
+        alert("Failed to commit settings, check server connection.");
+      }
+    } catch (e) {
+      alert("Failed to commit settings, check server connection.");
+    }
+  };
+
   const handleSaveProfile = async () => {
     if (!newProfileName.trim()) return;
     try {
@@ -350,7 +373,29 @@ export default function ConfigPage({
                   onChange={(e) => setRiskConfig({ ...riskConfig, max_consecutive_losses: parseInt(e.target.value) || 3 })}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 outline-none font-mono"
                 />
-                <p className="text-[10px] text-slate-400">Triggers a 30-min scan cooldown lock on consecutive failures.</p>
+                <p className="text-[10px] text-slate-400">Triggers a {riskConfig.consecutive_losses_cooldown_minutes !== undefined ? riskConfig.consecutive_losses_cooldown_minutes : 30}-min scan cooldown lock on consecutive failures.</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-400 uppercase">Loss Cooldown (Minutes)</label>
+                <input
+                  type="number"
+                  value={riskConfig.consecutive_losses_cooldown_minutes !== undefined ? riskConfig.consecutive_losses_cooldown_minutes : 30}
+                  onChange={(e) => setRiskConfig({ ...riskConfig, consecutive_losses_cooldown_minutes: parseInt(e.target.value) || 30 })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 outline-none font-mono"
+                />
+                <p className="text-[10px] text-slate-400">The length of the trade execution ban after N consecutive losses.</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-400 uppercase">Max Trades Per Day</label>
+                <input
+                  type="number"
+                  value={generalConfig.max_trades_per_day}
+                  onChange={(e) => setGeneralConfig({ ...generalConfig, max_trades_per_day: parseInt(e.target.value) || 8 })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 outline-none font-mono"
+                />
+                <p className="text-[10px] text-slate-400">Ceiling to prevent overtrading and limit daily exposure (Standard: 8).</p>
               </div>
 
               <div className="space-y-1.5">
@@ -382,10 +427,10 @@ export default function ConfigPage({
 
             <div className="border-t border-slate-200 pt-5 flex justify-end">
               <button
-                onClick={() => handleSaveCategory("risk_management", riskConfig)}
+                onClick={handleSaveRiskAndGeneral}
                 className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-sans font-semibold px-5 py-2.5 rounded-lg transition-colors duration-150 cursor-pointer shadow-sm"
               >
-                COMMIT RISK PARAMETERS
+                COMMIT GENERAL & RISK PARAMETERS
               </button>
             </div>
           </div>

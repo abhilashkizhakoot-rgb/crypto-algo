@@ -90,6 +90,7 @@ const DEFAULT_CONFIG: StrategyConfig = {
     stop_loss_atr_multiplier: 1.3,
     take_profit_ratio: 2.0,
     max_consecutive_losses: 3,
+    consecutive_losses_cooldown_minutes: 30,
     daily_loss_limit_pct: 2.0,
     weekly_loss_limit_pct: 5.0,
     intra_trade_drawdown_limit_pct: 1.5,
@@ -705,8 +706,18 @@ class DatabaseManager {
   }
 
   public getConfig(): StrategyConfig {
-    if (this.cache?.config?.risk_management && this.cache.config.risk_management.default_quantity_btc === undefined) {
-      this.cache.config.risk_management.default_quantity_btc = 0.001;
+    let changed = false;
+    if (this.cache?.config?.risk_management) {
+      if (this.cache.config.risk_management.default_quantity_btc === undefined) {
+        this.cache.config.risk_management.default_quantity_btc = 0.001;
+        changed = true;
+      }
+      if (this.cache.config.risk_management.consecutive_losses_cooldown_minutes === undefined) {
+        this.cache.config.risk_management.consecutive_losses_cooldown_minutes = 30;
+        changed = true;
+      }
+    }
+    if (changed) {
       this.save();
     }
     return this.cache!.config;

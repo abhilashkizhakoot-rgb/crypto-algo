@@ -138,6 +138,14 @@ export default function CheckpointsPage({ status, onRefresh, onTabChange }: Chec
       description: "Validates connection keys and signatures required to route orders to Delta Exchange REST endpoints.",
       priority: "CRITICAL",
     },
+    {
+      name: "Loss Streak Cooldown Protection",
+      met: true,
+      current_value: "PASSING",
+      required: "No active cooldown from consecutive losses",
+      description: "Automated timeout that blocks trading after being hit by N consecutive losses to prevent emotional or algorithmic revenge trading.",
+      priority: "CRITICAL",
+    },
   ];
 
   const conditions = checkpointsData?.conditions || fallbackConditions;

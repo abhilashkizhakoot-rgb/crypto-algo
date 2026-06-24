@@ -187,6 +187,7 @@ export interface StrategyConfig {
     stop_loss_atr_multiplier: number; // e.g. 1.3
     take_profit_ratio: number; // e.g. 2.0 (1:2 R:R)
     max_consecutive_losses: number; // e.g. 3
+    consecutive_losses_cooldown_minutes: number; // e.g. 30
     daily_loss_limit_pct: number; // e.g. 2.0
     weekly_loss_limit_pct: number; // e.g. 5.0
     intra_trade_drawdown_limit_pct: number; // e.g. 1.5

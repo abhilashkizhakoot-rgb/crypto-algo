@@ -102,6 +102,60 @@ class TradingEngine {
     return this.candles1m;
   }
 
+  public getConsecutiveLossesCooldownStatus() {
+    const config = dbManager.getConfig();
+    const closedTrades = dbManager.getTrades()
+      .filter((t) => t.exit_timestamp !== null)
+      .sort((a, b) => new Date(b.exit_timestamp!).getTime() - new Date(a.exit_timestamp!).getTime());
+
+    const maxLosses = config.risk_management.max_consecutive_losses || 3;
+    const cooldownMins = config.risk_management.consecutive_losses_cooldown_minutes !== undefined 
+      ? config.risk_management.consecutive_losses_cooldown_minutes 
+      : 30; // Default to 30 mins
+
+    let consecutiveLosses = 0;
+    let latestLossTime: number | null = null;
+
+    for (const t of closedTrades) {
+      const isLoss = t.is_win === false || (t.pnl_usdt !== null && t.pnl_usdt < 0);
+      const isWin = t.is_win === true || (t.pnl_usdt !== null && t.pnl_usdt > 0);
+
+      if (isLoss) {
+        if (consecutiveLosses === 0) {
+          latestLossTime = new Date(t.exit_timestamp!).getTime();
+        }
+        consecutiveLosses++;
+        if (consecutiveLosses >= maxLosses) {
+          break;
+        }
+      } else if (isWin) {
+        break; // Streak broken by a win
+      }
+    }
+
+    if (consecutiveLosses >= maxLosses && latestLossTime !== null) {
+      const cooldownMs = cooldownMins * 60 * 1000;
+      const expiryTime = latestLossTime + cooldownMs;
+      const now = Date.now();
+      if (now < expiryTime) {
+        const remainingSec = Math.ceil((expiryTime - now) / 1000);
+        return {
+          active: true,
+          consecutiveLosses,
+          remainingSeconds: remainingSec,
+          expiryTime: new Date(expiryTime).toISOString()
+        };
+      }
+    }
+
+    return {
+      active: false,
+      consecutiveLosses,
+      remainingSeconds: 0,
+      expiryTime: null
+    };
+  }
+
   public calculateAverageSentiment(headlines: NewsHeadline[]): number {
     if (headlines.length === 0) return 0;
     // A simple arithmetic mean over multiple headlines dilutes high-conviction signals due to the high density of neutral news.
@@ -278,6 +332,19 @@ class TradingEngine {
       current_value: dbManager.isPaperMode() ? "PAPER MODE ACTIVE" : (hasValidCreds ? "KEYS CONFIGURED" : "MISSING KEYS"),
       required: "Live API credentials required if not in Paper Mode",
       description: "Validates connection keys and signatures required to route orders to Delta Exchange REST endpoints.",
+      priority: "CRITICAL",
+    });
+
+    // C11: Consecutive Losses Cooldown Protection
+    const lossCooldown = this.getConsecutiveLossesCooldownStatus();
+    conditions.push({
+      name: "Loss Streak Cooldown Protection",
+      met: !lossCooldown.active,
+      current_value: lossCooldown.active
+        ? `COOLDOWN (Streak: ${lossCooldown.consecutiveLosses}, ${Math.ceil(lossCooldown.remainingSeconds / 60)}m left)`
+        : "PASSING",
+      required: "No active cooldown from consecutive losses",
+      description: "Automated timeout that blocks trading after being hit by N consecutive losses to prevent emotional or algorithmic revenge trading.",
       priority: "CRITICAL",
     });
 
@@ -947,6 +1014,17 @@ class TradingEngine {
       met: hasValidCreds,
       current_value: dbManager.isPaperMode() ? "PAPER MODE ACTIVE" : (hasValidCreds ? "KEYS CONFIGURED" : "MISSING KEYS"),
       required: "Live API credentials required if not in Paper Mode",
+    });
+
+    // C11: Consecutive Losses Cooldown Protection
+    const lossCooldown = this.getConsecutiveLossesCooldownStatus();
+    conditions.push({
+      name: "Loss Streak Cooldown Protection",
+      met: !lossCooldown.active,
+      current_value: lossCooldown.active
+        ? `COOLDOWN (Streak: ${lossCooldown.consecutiveLosses}, ${Math.ceil(lossCooldown.remainingSeconds / 60)}m left)`
+        : "PASSING",
+      required: "No active cooldown from consecutive losses",
     });
 
     // Calculate Entry Score
