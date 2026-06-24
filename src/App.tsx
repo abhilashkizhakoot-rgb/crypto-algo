@@ -404,7 +404,7 @@ export default function App() {
                           className="rounded border-slate-300 bg-slate-50 text-indigo-600 focus:ring-0"
                         />
                         <span className="flex items-center gap-1.5">
-                          <span>Use Delta India APIs (api.deltaexchange.in)</span>
+                          <span>Use Delta India APIs (api.india.delta.exchange)</span>
                           <span className="text-[10px] font-mono bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded uppercase font-semibold">India</span>
                         </span>
                       </label>

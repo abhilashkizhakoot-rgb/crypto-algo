@@ -75,7 +75,7 @@ async function startServer() {
     try {
       let baseUrl = "https://api.delta.exchange";
       if (creds.is_india) {
-        baseUrl = creds.is_testnet ? "https://testnet-api.deltaexchange.in" : "https://api.deltaexchange.in";
+        baseUrl = creds.is_testnet ? "https://testnet-api.india.delta.exchange" : "https://api.india.delta.exchange";
       } else {
         baseUrl = creds.is_testnet ? "https://testnet-api.delta.exchange" : "https://api.delta.exchange";
       }
@@ -88,15 +88,23 @@ async function startServer() {
       const signatureData = method + timestamp + path + queryString + payload;
       const signature = crypto.createHmac("sha256", creds.api_secret).update(signatureData).digest("hex");
 
+      const headers: Record<string, string> = {
+        "api-key": creds.api_key,
+        "Content-Type": "application/json",
+        "User-Agent": "Delta-Exchange-Trading-Bot/1.0"
+      };
+
+      if (creds.is_india) {
+        headers["signature"] = signature;
+        headers["timestamp"] = timestamp;
+      } else {
+        headers["api-signature"] = signature;
+        headers["api-timestamp"] = timestamp;
+      }
+
       const response = await fetch(`${baseUrl}${path}`, {
         method,
-        headers: {
-          "api-key": creds.api_key,
-          "api-signature": signature,
-          "api-timestamp": timestamp,
-          "Content-Type": "application/json",
-          "User-Agent": "Delta-Exchange-Trading-Bot/1.0"
-        }
+        headers
       });
 
       if (response.ok) {
