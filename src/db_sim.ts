@@ -94,6 +94,7 @@ const DEFAULT_CONFIG: StrategyConfig = {
     weekly_loss_limit_pct: 5.0,
     intra_trade_drawdown_limit_pct: 1.5,
     leverage: 20,
+    default_quantity_btc: 0.001,
   },
 };
 
@@ -704,6 +705,10 @@ class DatabaseManager {
   }
 
   public getConfig(): StrategyConfig {
+    if (this.cache?.config?.risk_management && this.cache.config.risk_management.default_quantity_btc === undefined) {
+      this.cache.config.risk_management.default_quantity_btc = 0.001;
+      this.save();
+    }
     return this.cache!.config;
   }
 

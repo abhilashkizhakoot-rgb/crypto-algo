@@ -191,6 +191,7 @@ export interface StrategyConfig {
     weekly_loss_limit_pct: number; // e.g. 5.0
     intra_trade_drawdown_limit_pct: number; // e.g. 1.5
     leverage: number; // leverage setting (e.g. 10x, 20x, 50x)
+    default_quantity_btc: number; // default trading size (e.g. 0.001)
   };
 }
 

@@ -16,6 +16,7 @@ import {
 } from "./types.js";
 import { FinBertSentimentModel } from "./finbert.js";
 import { fetchLiveRSSHeadlines } from "./rss.js";
+import { placeDeltaMarketOrder } from "./delta_client.js";
 
 class TradingEngine {
   private candles1m: Candlestick[] = [];
@@ -777,10 +778,8 @@ class TradingEngine {
     const stopLossDistance = lastAtr * config.risk_management.stop_loss_atr_multiplier;
     const takeProfitDistance = stopLossDistance * config.risk_management.take_profit_ratio;
 
-    // Calculate position size based on 0.5% account equity risk
-    const accountEquity = creds.account_balance_usdt;
-    const riskAmountUsdt = accountEquity * (config.risk_management.risk_per_trade_pct / 100);
-    const positionQtyBtc = Number((riskAmountUsdt / stopLossDistance).toFixed(4));
+    // Use the configured default quantity for bitcoin trading
+    const positionQtyBtc = config.risk_management.default_quantity_btc || 0.001;
     const leverage = config.risk_management.leverage || 20;
 
     const stopLossPrice = direction === "LONG" ? currentPrice - stopLossDistance : currentPrice + stopLossDistance;
@@ -834,7 +833,29 @@ class TradingEngine {
       signals[sigIdx].executed = true;
     }
 
-    this.log(`SUCCESS! Trade entry confirmed on Delta Exchange. Transaction ID: ${newTrade.id}`);
+    this.log(`SUCCESS! Trade entry confirmed. Transaction ID: ${newTrade.id}`);
+
+    // If live account mode is enabled, execute real-time order placement on Delta Exchange!
+    if (!dbManager.isPaperMode()) {
+      this.log(`📡 Dispatching real market order to Delta Exchange REST API...`);
+      const side = direction === "LONG" ? "buy" : "sell";
+      placeDeltaMarketOrder(creds, "BTCUSD", side, positionQtyBtc).then((res) => {
+        if (res.success) {
+          this.log(`✅ Delta Exchange order matched successfully! Order ID: ${res.order_id}`);
+          dbManager.updateTrade(newTrade.id, {
+            feature_snapshot: {
+              ...newTrade.feature_snapshot,
+              delta_order_id: res.order_id,
+              delta_response: res.response_data,
+            }
+          });
+        } else {
+          this.log(`❌ Delta Exchange API returned rejection error: ${res.message}`);
+        }
+      }).catch((err) => {
+        this.log(`❌ Delta Exchange order dispatch error: ${err?.message || err}`);
+      });
+    }
   }
 
   // Real-time tracking of active position PnL and exit checking
@@ -973,6 +994,24 @@ class TradingEngine {
 
     this.activeTrade = null;
     this.log(`Trade closed. Net P&L: $${finalPnL.toFixed(2)} USD. Account balance updated to: $${newBal.toFixed(2)}`);
+
+    const creds = dbManager.getCredentials();
+
+    // If live account mode is enabled, execute real-time order placement to CLOSE position on Delta Exchange!
+    if (!dbManager.isPaperMode()) {
+      this.log(`📡 Dispatching real market order to CLOSE position on Delta Exchange REST API...`);
+      // Place opposite order to close (if we were LONG, we SELL; if we were SHORT, we BUY)
+      const closeSide = trade.direction === TradeDirection.LONG ? "sell" : "buy";
+      placeDeltaMarketOrder(creds, "BTCUSD", closeSide, trade.quantity_btc).then((res) => {
+        if (res.success) {
+          this.log(`✅ Delta Exchange position successfully closed! Exit Order ID: ${res.order_id}`);
+        } else {
+          this.log(`❌ Delta Exchange API returned exit rejection error: ${res.message}`);
+        }
+      }).catch((err) => {
+        this.log(`❌ Delta Exchange exit order dispatch error: ${err?.message || err}`);
+      });
+    }
   }
 
   // Force exit manual trigger
@@ -1043,6 +1082,30 @@ class TradingEngine {
 
     this.activeTrade = newTrade;
     this.log(`Manual trade successfully created and active. Trade ID: ${newTrade.id}`);
+
+    const creds = dbManager.getCredentials();
+
+    // If live account mode is enabled, execute real-time order placement on Delta Exchange!
+    if (!dbManager.isPaperMode()) {
+      this.log(`📡 Dispatching real MANUAL market order to Delta Exchange REST API...`);
+      const side = direction === "LONG" ? "buy" : "sell";
+      placeDeltaMarketOrder(creds, "BTCUSD", side, q).then((res) => {
+        if (res.success) {
+          this.log(`✅ Delta Exchange manual order matched successfully! Order ID: ${res.order_id}`);
+          dbManager.updateTrade(newTrade.id, {
+            feature_snapshot: {
+              ...newTrade.feature_snapshot,
+              delta_order_id: res.order_id,
+              delta_response: res.response_data,
+            }
+          });
+        } else {
+          this.log(`❌ Delta Exchange API returned rejection error for manual order: ${res.message}`);
+        }
+      }).catch((err) => {
+        this.log(`❌ Delta Exchange manual order dispatch error: ${err?.message || err}`);
+      });
+    }
 
     return {
       success: true,
