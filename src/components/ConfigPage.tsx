@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Settings,
   Cpu,
@@ -40,6 +40,13 @@ export default function ConfigPage({
   const [mlConfig, setMlConfig] = useState(config.ml_settings);
   const [sentimentConfig, setSentimentConfig] = useState(config.sentiment_settings);
   const [riskConfig, setRiskConfig] = useState(config.risk_management);
+
+  useEffect(() => {
+    setGeneralConfig(config.general);
+    setMlConfig(config.ml_settings);
+    setSentimentConfig(config.sentiment_settings);
+    setRiskConfig(config.risk_management);
+  }, [config]);
 
   const handleSaveCategory = async (category: string, data: any) => {
     try {
@@ -186,6 +193,70 @@ export default function ConfigPage({
             <div>
               <h3 className="font-sans font-bold text-sm text-slate-800">Dynamic Risk & Position Sizing</h3>
               <p className="text-xs text-slate-400 font-sans mt-1">Configure Delta Exchange futures exposure and circuit-breaker safeguards.</p>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200/60 rounded-xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-sm">
+              <div>
+                <h4 className="text-xs font-bold font-sans text-slate-700 flex items-center gap-1.5 uppercase">
+                  <Shield className="w-4 h-4 text-indigo-500" />
+                  Strategy Execution Environment
+                </h4>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Toggle between simulated paper execution with zero financial risk and real Delta Exchange contract trading.
+                </p>
+              </div>
+              <div className="flex gap-2 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch("/api/trading/toggle-paper-mode", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ is_paper_trading: true }),
+                      });
+                      if (res.ok) {
+                        onRefresh();
+                        alert("Environment successfully toggled to PAPER TRADING.");
+                      }
+                    } catch (e) {
+                      alert("Failed to toggle mode.");
+                    }
+                  }}
+                  className={`px-4 py-2 text-xs font-semibold rounded-lg border transition-all cursor-pointer ${
+                    generalConfig.is_paper_trading
+                      ? "bg-amber-100 border-amber-200 text-amber-800"
+                      : "bg-white border-slate-200 text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  Paper Trading
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch("/api/trading/toggle-paper-mode", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ is_paper_trading: false }),
+                      });
+                      if (res.ok) {
+                        onRefresh();
+                        alert("Environment successfully toggled to LIVE ACCOUNT.");
+                      }
+                    } catch (e) {
+                      alert("Failed to toggle mode.");
+                    }
+                  }}
+                  className={`px-4 py-2 text-xs font-semibold rounded-lg border transition-all cursor-pointer ${
+                    !generalConfig.is_paper_trading
+                      ? "bg-rose-600 border-rose-600 text-white"
+                      : "bg-white border-slate-200 text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  Live Account
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-slate-600">

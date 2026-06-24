@@ -41,6 +41,7 @@ const DEFAULT_CONFIG: StrategyConfig = {
     is_trading_active: false,
     cooldown_minutes: 30,
     max_trades_per_day: 8,
+    is_paper_trading: true,
   },
   ml_settings: {
     entry_threshold_long: 0.80,
@@ -349,8 +350,129 @@ function generateMockHistory(): DatabaseSchema {
   };
 }
 
+function generateMockPaperHistory(): { credentials: ExchangeCredentials; trades: Trade[]; signals: TradingSignal[] } {
+  const trades: Trade[] = [];
+  const signals: TradingSignal[] = [];
+  const now = Date.now();
+  let currentBalance = 100000; // Starting capital is $100,000 USDT for paper account
+  const basePrice = 101250;
+
+  for (let k = 15; k >= 1; k--) {
+    const tradeHoursAgo = k * 4.2 + Math.random() * 2.5;
+    const entryTime = new Date(now - tradeHoursAgo * 3600 * 1000);
+    const exitTime = new Date(entryTime.getTime() + (12 + Math.floor(Math.random() * 15)) * 60000);
+
+    const direction = Math.random() > 0.45 ? TradeDirection.LONG : TradeDirection.SHORT;
+    const isWin = Math.random() > 0.38; // ~62% Win Rate for paper trading
+
+    const entryPrice = basePrice + (direction === TradeDirection.LONG ? -150 : 150) + Math.random() * 800 - Math.random() * 800;
+    const atrValue = 130 + Math.random() * 60;
+    const stopDistance = atrValue * 1.3;
+    const takeProfitDistance = stopDistance * 2.0;
+
+    let exitPrice = entryPrice;
+    let exitReason: ExitReason;
+
+    if (isWin) {
+      exitPrice = direction === TradeDirection.LONG ? entryPrice + takeProfitDistance : entryPrice - takeProfitDistance;
+      exitReason = ExitReason.TAKE_PROFIT;
+    } else {
+      exitPrice = direction === TradeDirection.LONG ? entryPrice - stopDistance : entryPrice + stopDistance;
+      exitReason = Math.random() > 0.8 ? ExitReason.TIME_LIMIT_29MIN : ExitReason.STOP_LOSS;
+    }
+
+    const tradeRiskUsdt = currentBalance * 0.005; // 0.5% risk
+    const quantityBtc = Number((tradeRiskUsdt / stopDistance).toFixed(4));
+    const leverage = 20;
+
+    let pnlUsdt = 0;
+    if (direction === TradeDirection.LONG) {
+      pnlUsdt = (exitPrice - entryPrice) * quantityBtc;
+    } else {
+      pnlUsdt = (entryPrice - exitPrice) * quantityBtc;
+    }
+
+    const positionValue = entryPrice * quantityBtc;
+    const feesPaid = positionValue * 0.0006 * 2;
+    pnlUsdt -= feesPaid;
+
+    currentBalance += pnlUsdt;
+
+    const catboostProbability = direction === TradeDirection.LONG
+      ? (isWin ? 0.80 + Math.random() * 0.14 : 0.69 + Math.random() * 0.10)
+      : (isWin ? 0.06 + Math.random() * 0.10 : 0.16 + Math.random() * 0.12);
+
+    const regime = direction === TradeDirection.LONG ? MarketRegime.STRONG_UPTREND : MarketRegime.STRONG_DOWNTREND;
+
+    trades.push({
+      id: `trade-paper-hist-${16 - k}`,
+      entry_timestamp: entryTime.toISOString(),
+      exit_timestamp: exitTime.toISOString(),
+      direction,
+      entry_price: Number(entryPrice.toFixed(2)),
+      exit_price: Number(exitPrice.toFixed(2)),
+      quantity_btc: quantityBtc,
+      leverage,
+      pnl_usdt: Number(pnlUsdt.toFixed(2)),
+      pnl_pct: Number(((pnlUsdt / currentBalance) * 100).toFixed(4)),
+      fees_paid_usdt: Number(feesPaid.toFixed(4)),
+      exit_reason: exitReason,
+      catboost_probability: Number(catboostProbability.toFixed(4)),
+      regime_at_entry: regime,
+      sentiment_score_at_entry: direction === TradeDirection.LONG ? 0.30 + Math.random() * 0.3 : -0.30 - Math.random() * 0.3,
+      sentiment_momentum_at_entry: direction === TradeDirection.LONG ? 0.10 : -0.10,
+      entry_signal_score: 80 + Math.floor(Math.random() * 18),
+      max_favorable_excursion: isWin ? 2.0 : 0.3 + Math.random() * 0.5,
+      max_adverse_excursion: isWin ? 0.2 + Math.random() * 0.4 : 1.30,
+      hold_duration_seconds: Math.floor((exitTime.getTime() - entryTime.getTime()) / 1000),
+      is_win: isWin,
+      feature_snapshot: {
+        last_price: entryPrice,
+        atr_14: atrValue,
+        regime,
+        average_sentiment: direction === TradeDirection.LONG ? 0.35 : -0.35,
+      },
+      created_at: entryTime.toISOString(),
+    });
+
+    signals.push({
+      id: `sig-paper-${16 - k}`,
+      trade_id: `trade-paper-hist-${16 - k}`,
+      timestamp: entryTime.toISOString(),
+      catboost_probability: Number(catboostProbability.toFixed(4)),
+      direction,
+      regime_detected: regime,
+      sentiment_score: direction === TradeDirection.LONG ? 0.40 : -0.38,
+      sentiment_momentum: direction === TradeDirection.LONG ? 0.10 : -0.12,
+      all_conditions_met: true,
+      failed_conditions: [],
+      executed: true,
+      rejection_reason: null,
+      created_at: entryTime.toISOString(),
+    });
+  }
+
+  return {
+    credentials: {
+      ...DEFAULT_CREDENTIALS,
+      id: "delta-exchange-paper-key",
+      exchange_name: "Delta Exchange (Paper)",
+      api_key: "PAPER_TRADING_API_KEY",
+      api_secret: "PAPER_TRADING_API_SECRET",
+      account_balance_usdt: Number(currentBalance.toFixed(2)),
+      connection_status: ConnectionStatus.CONNECTED,
+      last_tested_at: new Date().toISOString(),
+      last_successful_connection: new Date().toISOString(),
+      connection_error_message: null,
+    },
+    trades,
+    signals,
+  };
+}
+
 class DatabaseManager {
   private cache: DatabaseSchema | null = null;
+  private paperCache: { credentials: ExchangeCredentials; trades: Trade[]; signals: TradingSignal[] } | null = null;
 
   constructor() {
     this.init();
@@ -370,6 +492,21 @@ class DatabaseManager {
       console.error("Failed to initialize database store, generating temporary memory-based database:", e);
       this.cache = generateMockHistory();
     }
+
+    const DB_PAPER_FILE_PATH = path.join(process.cwd(), "db_paper_store.json");
+    try {
+      if (fs.existsSync(DB_PAPER_FILE_PATH)) {
+        const fileContent = fs.readFileSync(DB_PAPER_FILE_PATH, "utf-8");
+        this.paperCache = JSON.parse(fileContent);
+      } else {
+        const mockPaperData = generateMockPaperHistory();
+        this.paperCache = mockPaperData;
+        this.savePaper();
+      }
+    } catch (e) {
+      console.error("Failed to initialize paper database store, using memory-based paper database:", e);
+      this.paperCache = generateMockPaperHistory();
+    }
   }
 
   private save() {
@@ -382,11 +519,38 @@ class DatabaseManager {
     }
   }
 
+  private savePaper() {
+    try {
+      if (this.paperCache) {
+        const DB_PAPER_FILE_PATH = path.join(process.cwd(), "db_paper_store.json");
+        fs.writeFileSync(DB_PAPER_FILE_PATH, JSON.stringify(this.paperCache, null, 2), "utf-8");
+      }
+    } catch (e) {
+      console.error("Failed to write paper state to db_paper_store.json:", e);
+    }
+  }
+
+  public isPaperMode(): boolean {
+    return !!this.cache?.config?.general?.is_paper_trading;
+  }
+
   public getCredentials(): ExchangeCredentials {
+    if (this.isPaperMode()) {
+      return this.paperCache!.credentials;
+    }
     return this.cache!.credentials;
   }
 
   public updateCredentials(creds: Partial<ExchangeCredentials>): ExchangeCredentials {
+    if (this.isPaperMode()) {
+      this.paperCache!.credentials = {
+        ...this.paperCache!.credentials,
+        ...creds,
+        updated_at: new Date().toISOString(),
+      };
+      this.savePaper();
+      return this.paperCache!.credentials;
+    }
     this.cache!.credentials = {
       ...this.cache!.credentials,
       ...creds,
@@ -397,53 +561,90 @@ class DatabaseManager {
   }
 
   public getTrades(): Trade[] {
+    if (this.isPaperMode()) {
+      return this.paperCache!.trades;
+    }
     return this.cache!.trades;
   }
 
+  public getLiveTrades(): Trade[] {
+    return this.cache!.trades;
+  }
+
+  public getPaperTrades(): Trade[] {
+    return this.paperCache!.trades;
+  }
+
   public getTradeById(id: string): Trade | undefined {
-    return this.cache!.trades.find((t) => t.id === id);
+    return this.getTrades().find((t) => t.id === id);
   }
 
   public addTrade(trade: Omit<Trade, "id" | "created_at">): Trade {
+    const isPaper = this.isPaperMode();
     const newTrade: Trade = {
       ...trade,
-      id: `trade-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      id: isPaper 
+        ? `trade-paper-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+        : `trade-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       created_at: new Date().toISOString(),
     };
-    this.cache!.trades.unshift(newTrade);
-    this.save();
+    if (isPaper) {
+      this.paperCache!.trades.unshift(newTrade);
+      this.savePaper();
+    } else {
+      this.cache!.trades.unshift(newTrade);
+      this.save();
+    }
     return newTrade;
   }
 
   public updateTrade(id: string, updates: Partial<Trade>): Trade {
-    const idx = this.cache!.trades.findIndex((t) => t.id === id);
+    const isPaper = this.isPaperMode();
+    const list = isPaper ? this.paperCache!.trades : this.cache!.trades;
+    const idx = list.findIndex((t) => t.id === id);
     if (idx === -1) {
       throw new Error(`Trade with ID ${id} not found`);
     }
     const updatedTrade = {
-      ...this.cache!.trades[idx],
+      ...list[idx],
       ...updates,
     };
-    this.cache!.trades[idx] = updatedTrade;
-    this.save();
+    list[idx] = updatedTrade;
+    if (isPaper) {
+      this.savePaper();
+    } else {
+      this.save();
+    }
     return updatedTrade;
   }
 
   public getSignals(): TradingSignal[] {
+    if (this.isPaperMode()) {
+      return this.paperCache!.signals;
+    }
     return this.cache!.signals;
   }
 
   public addSignal(signal: Omit<TradingSignal, "id" | "created_at">): TradingSignal {
+    const isPaper = this.isPaperMode();
     const newSignal: TradingSignal = {
       ...signal,
-      id: `sig-${Date.now()}`,
+      id: isPaper ? `sig-paper-${Date.now()}` : `sig-${Date.now()}`,
       created_at: new Date().toISOString(),
     };
-    this.cache!.signals.unshift(newSignal);
-    if (this.cache!.signals.length > 300) {
-      this.cache!.signals.pop();
+    if (isPaper) {
+      this.paperCache!.signals.unshift(newSignal);
+      if (this.paperCache!.signals.length > 300) {
+        this.paperCache!.signals.pop();
+      }
+      this.savePaper();
+    } else {
+      this.cache!.signals.unshift(newSignal);
+      if (this.cache!.signals.length > 300) {
+        this.cache!.signals.pop();
+      }
+      this.save();
     }
-    this.save();
     return newSignal;
   }
 
@@ -563,7 +764,7 @@ class DatabaseManager {
   }
 
   public getAnalyticsSummary(): any {
-    const trades = this.cache!.trades.filter((t) => t.exit_price !== null);
+    const trades = this.getTrades().filter((t) => t.exit_price !== null);
     const winTrades = trades.filter((t) => t.is_win);
     const lossTrades = trades.filter((t) => !t.is_win);
 
@@ -616,7 +817,7 @@ class DatabaseManager {
   }
 
   public getEquityCurve(): { timestamp: string; balance: number }[] {
-    const trades = this.cache!.trades.filter((t) => t.exit_price !== null);
+    const trades = this.getTrades().filter((t) => t.exit_price !== null);
     const sortedTradesAsc = [...trades].sort(
       (a, b) => new Date(a.entry_timestamp).getTime() - new Date(b.entry_timestamp).getTime()
     );
@@ -636,7 +837,7 @@ class DatabaseManager {
   }
 
   public getDailyBreakdown(): DailyStats[] {
-    const trades = this.cache!.trades.filter((t) => t.exit_price !== null);
+    const trades = this.getTrades().filter((t) => t.exit_price !== null);
     const grouped: Record<string, Trade[]> = {};
 
     trades.forEach((t) => {
@@ -680,7 +881,7 @@ class DatabaseManager {
   }
 
   public getPerformanceByRegime(): Record<string, { trades: number; win_rate: number; pnl: number }> {
-    const trades = this.cache!.trades.filter((t) => t.exit_price !== null);
+    const trades = this.getTrades().filter((t) => t.exit_price !== null);
     const analysis: Record<string, { trades: number; wins: number; pnl: number }> = {
       [MarketRegime.STRONG_UPTREND]: { trades: 0, wins: 0, pnl: 0 },
       [MarketRegime.STRONG_DOWNTREND]: { trades: 0, wins: 0, pnl: 0 },

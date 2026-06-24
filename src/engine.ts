@@ -22,7 +22,8 @@ class TradingEngine {
   private currentPrice: number = 101500;
   private currentVolume24h: number = 125400;
   private logs: string[] = [];
-  private activeTrade: Trade | null = null;
+  private liveActiveTrade: Trade | null = null;
+  private paperActiveTrade: Trade | null = null;
   private lastScanningTimestamp: string = "";
   private criticalEventActive: boolean = false;
   private criticalEventKeyword: string | null = null;
@@ -30,7 +31,33 @@ class TradingEngine {
   private currentRegime: MarketRegime = MarketRegime.RANGE_BOUND;
   private regimeConfidence: number = 0.5;
 
+  private get activeTrade(): Trade | null {
+    if (dbManager.isPaperMode()) {
+      return this.paperActiveTrade;
+    }
+    return this.liveActiveTrade;
+  }
+
+  private set activeTrade(trade: Trade | null) {
+    if (dbManager.isPaperMode()) {
+      this.paperActiveTrade = trade;
+    } else {
+      this.liveActiveTrade = trade;
+    }
+  }
+
   constructor() {
+    // Restore open active trades from database stores on startup
+    const openLiveTrade = dbManager.getLiveTrades().find((t) => t.exit_price === null);
+    if (openLiveTrade) {
+      this.liveActiveTrade = openLiveTrade;
+    }
+
+    const openPaperTrade = dbManager.getPaperTrades().find((t) => t.exit_price === null);
+    if (openPaperTrade) {
+      this.paperActiveTrade = openPaperTrade;
+    }
+
     this.initCandles();
     this.startLoop();
   }
@@ -56,6 +83,7 @@ class TradingEngine {
 
     return {
       is_trading_active: config.general.is_trading_active,
+      is_paper_trading: config.general.is_paper_trading,
       current_price: this.currentPrice,
       current_regime: this.currentRegime,
       regime_confidence: this.regimeConfidence,
@@ -65,6 +93,10 @@ class TradingEngine {
       active_trade: active,
       account_balance_usdt: creds.account_balance_usdt,
     };
+  }
+
+  public getCandles() {
+    return this.candles1m;
   }
 
   // Fetch initial candles from Binance or generate realistic ones as fallback

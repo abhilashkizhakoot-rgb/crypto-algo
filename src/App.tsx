@@ -316,6 +316,50 @@ export default function App() {
           </button>
         </nav>
 
+        {/* Trading Mode Switch */}
+        <div className="flex items-center bg-slate-100 border border-slate-200 p-1 rounded-xl" id="trading-mode-selector">
+          <button
+            onClick={async () => {
+              const res = await fetch("/api/trading/toggle-paper-mode", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ is_paper_trading: true }),
+              });
+              if (res.ok) {
+                await fetchAllData();
+              }
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+              status.is_paper_trading
+                ? "bg-amber-100 border border-amber-200/50 text-amber-800 shadow-sm font-bold"
+                : "text-slate-400 hover:text-slate-700 font-semibold"
+            }`}
+          >
+            <Shield className={`w-3.5 h-3.5 ${status.is_paper_trading ? "text-amber-600 animate-pulse" : "text-slate-400"}`} />
+            Paper Mode
+          </button>
+          <button
+            onClick={async () => {
+              const res = await fetch("/api/trading/toggle-paper-mode", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ is_paper_trading: false }),
+              });
+              if (res.ok) {
+                await fetchAllData();
+              }
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+              !status.is_paper_trading
+                ? "bg-rose-600 text-white shadow-sm font-bold"
+                : "text-slate-400 hover:text-slate-700 font-semibold"
+            }`}
+          >
+            <Zap className={`w-3.5 h-3.5 ${!status.is_paper_trading ? "text-amber-300" : "text-slate-400"}`} />
+            Live Account
+          </button>
+        </div>
+
         {/* Exchange Key Connector Button */}
         <div className="flex items-center gap-3">
           <button

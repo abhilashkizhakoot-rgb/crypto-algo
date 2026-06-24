@@ -9,6 +9,8 @@ import {
   Play,
   Square,
   AlertOctagon,
+  Shield,
+  Zap,
   ShieldAlert,
   TrendingUp,
   TrendingDown,
@@ -191,128 +193,63 @@ export default function Dashboard({
   // Convert logs to short display format
   const recentLogs = logs.slice(0, 15);
 
-  // Compute mock chart data for the candlestick view
-  const [allPoints, setAllPoints] = useState<any[]>([]);
+  // Fetch real candles from the backend and format/process them for Recharts
   const [chartData, setChartData] = useState<any[]>([]);
 
   useEffect(() => {
-    const basePrice = status.current_price;
-    if (!basePrice) return;
+    let active = true;
+    const fetchCandles = async () => {
+      try {
+        const res = await fetch("/api/market/candles");
+        if (!res.ok) return;
+        const data: any[] = await res.json();
+        if (!active || !Array.isArray(data) || data.length === 0) return;
 
-    const timeStr = new Date().toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+        // Process data and compute mathematical EMA 21 and EMA 50
+        const k21 = 2 / (21 + 1);
+        const k50 = 2 / (50 + 1);
 
-    setAllPoints((prev) => {
-      let updated = [...prev];
+        let currentEma21 = data[0].close;
+        let currentEma50 = data[0].close;
 
-      if (updated.length === 0) {
-        // Initial generation of 80 points backwards
-        const tempPoints: any[] = [];
-        const now = Date.now();
-        let currentClose = basePrice;
-
-        for (let i = 0; i < 80; i++) {
-          const tStr = new Date(now - i * 60000).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          });
-
-          // Standard random walk step with standard deviation + a tiny mean-reversion drift to keep it around the base price
-          const drift = (basePrice - currentClose) * 0.02;
-          const noise = (Math.random() - 0.5) * 160;
-          const change = noise + drift;
-          const open = Number((currentClose - change).toFixed(2));
-          const maxOC = Math.max(open, currentClose);
-          const minOC = Math.min(open, currentClose);
-          const high = Number((maxOC + Math.random() * 80 + 10).toFixed(2));
-          const low = Number((minOC - Math.random() * 80 - 10).toFixed(2));
-
-          tempPoints.push({
-            time: tStr,
-            open,
-            high,
-            low,
-            close: currentClose,
-            price: currentClose,
-          });
-
-          currentClose = open;
-        }
-
-        updated = tempPoints.reverse();
-      } else {
-        // We already have points. Update the last one or add a new one if minute changes.
-        const lastIdx = updated.length - 1;
-        const lastPoint = { ...updated[lastIdx] };
-
-        if (lastPoint.time === timeStr) {
-          // Update last point in place with live price ticks
-          lastPoint.close = basePrice;
-          lastPoint.price = basePrice;
-          lastPoint.high = Number(Math.max(lastPoint.high, basePrice).toFixed(2));
-          lastPoint.low = Number(Math.min(lastPoint.low, basePrice).toFixed(2));
-          updated[lastIdx] = lastPoint;
-        } else {
-          // A new minute has started! Append a new candle
-          const open = lastPoint.close;
-          const close = basePrice;
-          const maxOC = Math.max(open, close);
-          const minOC = Math.min(open, close);
-          const high = Number((maxOC + Math.random() * 80 + 10).toFixed(2));
-          const low = Number((minOC - Math.random() * 80 - 10).toFixed(2));
-
-          updated.push({
-            time: timeStr,
-            open,
-            high,
-            low,
-            close,
-            price: close,
-          });
-
-          // Maintain size limit of memory
-          if (updated.length > 120) {
-            updated = updated.slice(-80);
+        const finalPoints = data.map((p, idx) => {
+          if (idx > 0) {
+            currentEma21 = p.close * k21 + currentEma21 * (1 - k21);
+            currentEma50 = p.close * k50 + currentEma50 * (1 - k50);
           }
-        }
+
+          const minOC = Math.min(p.open, p.close);
+          const maxOC = Math.max(p.open, p.close);
+
+          // Format timestamp to local time string (e.g. "02:43 PM")
+          const formattedTime = p.time 
+            ? new Date(p.time * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+            : p.time;
+
+          return {
+            ...p,
+            time: formattedTime,
+            ema21: Number(currentEma21.toFixed(2)),
+            ema50: Number(currentEma50.toFixed(2)),
+            candlestickRange: [minOC, maxOC]
+          };
+        });
+
+        setChartData(finalPoints.slice(-30));
+      } catch (err) {
+        console.error("Failed to fetch market candles", err);
       }
+    };
 
-      // Re-calculate EMAs mathematically across the persistent history
-      const k21 = 2 / (21 + 1);
-      const k50 = 2 / (50 + 1);
-
-      let currentEma21 = updated[0].close;
-      let currentEma50 = updated[0].close;
-
-      const finalPoints = updated.map((p, idx) => {
-        if (idx > 0) {
-          currentEma21 = p.close * k21 + currentEma21 * (1 - k21);
-          currentEma50 = p.close * k50 + currentEma50 * (1 - k50);
-        }
-        
-        const minOC = Math.min(p.open, p.close);
-        const maxOC = Math.max(p.open, p.close);
-
-        return {
-          ...p,
-          ema21: Number(currentEma21.toFixed(2)),
-          ema50: Number(currentEma50.toFixed(2)),
-          candlestickRange: [minOC, maxOC]
-        };
-      });
-
-      return finalPoints;
-    });
+    fetchCandles();
+    
+    // Refresh candles on a short loop to keep current candle ticking live
+    const interval = setInterval(fetchCandles, 5000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, [status.current_price]);
-
-  // Sync to display slice
-  useEffect(() => {
-    if (allPoints.length > 0) {
-      setChartData(allPoints.slice(-30));
-    }
-  }, [allPoints]);
 
   // Determine sentiment score status color
   const getSentimentColor = (score: number) => {
@@ -349,6 +286,34 @@ export default function Dashboard({
           </div>
 
           <div className="space-y-4">
+            {/* Trading Mode Indicator */}
+            <div className={`p-3.5 rounded-xl border flex items-center justify-between shadow-sm transition-all ${
+              status.is_paper_trading 
+                ? "bg-amber-50/75 border-amber-200 text-amber-900" 
+                : "bg-rose-50/75 border-rose-200 text-rose-900"
+            }`}>
+              <div className="flex items-center gap-2">
+                <div className={`p-1.5 rounded-lg ${status.is_paper_trading ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700"}`}>
+                  {status.is_paper_trading ? (
+                    <Shield className="w-4 h-4" />
+                  ) : (
+                    <Zap className="w-4 h-4" />
+                  )}
+                </div>
+                <div>
+                  <p className="text-[9px] font-mono uppercase tracking-widest text-slate-400">Environment</p>
+                  <p className="text-xs font-sans font-bold mt-0.5">
+                    {status.is_paper_trading ? "Paper Trading" : "Live Account"}
+                  </p>
+                </div>
+              </div>
+              <span className={`text-[9px] font-mono px-2 py-0.5 rounded font-bold uppercase ${
+                status.is_paper_trading ? "bg-amber-200/50 text-amber-800 border border-amber-300/30" : "bg-rose-200/50 text-rose-800 border border-rose-300/30"
+              }`}>
+                {status.is_paper_trading ? "DEMO" : "REAL"}
+              </span>
+            </div>
+
             <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 flex justify-between items-center">
               <div>
                 <p className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Bot Status</p>

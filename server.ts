@@ -175,6 +175,12 @@ async function startServer() {
     res.json({ status: "trading_stopped" });
   });
 
+  app.post("/api/trading/toggle-paper-mode", (req, res) => {
+    const { is_paper_trading } = req.body;
+    dbManager.updateConfig("general", { is_paper_trading: is_paper_trading === true });
+    res.json({ success: true, is_paper_trading: dbManager.isPaperMode() });
+  });
+
   app.post("/api/trading/force-exit", (req, res) => {
     const executed = tradingEngine.forceExit();
     res.json({ executed, message: executed ? "Manual trade exit executed successfully." : "No active trade to exit." });
@@ -212,7 +218,7 @@ async function startServer() {
 
   app.get("/api/market/candles", (req, res) => {
     // Expose candles and computed indicator lines for charts
-    res.json(tradingEngine.getStatus());
+    res.json(tradingEngine.getCandles());
   });
 
   // ----------------------------------------------------

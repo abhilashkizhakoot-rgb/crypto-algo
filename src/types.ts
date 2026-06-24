@@ -157,6 +157,7 @@ export interface StrategyConfig {
     is_trading_active: boolean;
     cooldown_minutes: number;
     max_trades_per_day: number;
+    is_paper_trading: boolean;
   };
   ml_settings: {
     entry_threshold_long: number; // e.g. 0.80
