@@ -104,7 +104,7 @@ export async function placeDeltaMarketOrder(
       product_id: productId,
       size: sizeContracts,
       side: side,
-      order_type: "market",
+      order_type: "market_order",
     };
     const payload = JSON.stringify(payloadObj);
 
@@ -184,3 +184,90 @@ export async function placeDeltaMarketOrder(
     };
   }
 }
+
+/**
+ * Fetch wallet balances and return the USDT balance from Delta Exchange
+ */
+export async function getDeltaWalletBalance(creds: ExchangeCredentials): Promise<number | null> {
+  try {
+    if (!creds.api_key || !creds.api_secret) {
+      return null;
+    }
+
+    let baseUrl = creds.is_testnet ? "https://testnet-api.delta.exchange" : "https://api.delta.exchange";
+    if (creds.is_india) {
+      baseUrl = creds.is_testnet ? "https://testnet-api.india.delta.exchange" : "https://api.india.delta.exchange";
+    }
+
+    const path = "/v2/wallet/balances";
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const method = "GET";
+    const queryString = "";
+    const payload = "";
+
+    const signatureData = method + timestamp + path + queryString + payload;
+    const signature = crypto.createHmac("sha256", creds.api_secret).update(signatureData).digest("hex");
+
+    const headers: Record<string, string> = {
+      "api-key": creds.api_key,
+      "Content-Type": "application/json",
+      "User-Agent": "Delta-Exchange-Trading-Bot/1.0",
+    };
+
+    if (creds.is_india) {
+      headers["signature"] = signature;
+      headers["timestamp"] = timestamp;
+    } else {
+      headers["api-signature"] = signature;
+      headers["api-timestamp"] = timestamp;
+    }
+
+    const startTime = Date.now();
+    const response = await fetch(`${baseUrl}${path}`, {
+      method,
+      headers,
+    });
+    const latencyMs = Date.now() - startTime;
+
+    const responseText = await response.text();
+    let data: any = null;
+    try {
+      data = JSON.parse(responseText);
+    } catch (e) {}
+
+    // Mask headers for logging
+    const maskedHeaders = { ...headers };
+    if (maskedHeaders["api-key"]) {
+      const k = maskedHeaders["api-key"];
+      maskedHeaders["api-key"] = k.length > 8 ? k.substring(0, 4) + "..." + k.substring(k.length - 4) : "****";
+    }
+    if (maskedHeaders["signature"]) maskedHeaders["signature"] = "****";
+    if (maskedHeaders["api-signature"]) maskedHeaders["api-signature"] = "****";
+
+    dbManager.addApiLog({
+      service: "Delta Exchange",
+      method,
+      url: `${baseUrl}${path}`,
+      request_headers: maskedHeaders,
+      response_status: response.status,
+      response_body: responseText,
+      latency_ms: latencyMs,
+    });
+
+    if (response.ok && data && data.result && Array.isArray(data.result)) {
+      const usdtBal = data.result.find((item: any) => {
+        const sym = (item.asset_symbol || item.asset || item.symbol || (item.asset && item.asset.symbol) || "").toString().toUpperCase();
+        return sym === "USDT";
+      });
+      if (usdtBal) {
+        const val = usdtBal.balance !== undefined ? usdtBal.balance : (usdtBal.available_balance !== undefined ? usdtBal.available_balance : (usdtBal.wallet_balance !== undefined ? usdtBal.wallet_balance : "0"));
+        return parseFloat(val);
+      }
+    }
+    return null;
+  } catch (err) {
+    console.error("[DeltaClient] Error fetching wallet balance:", err);
+    return null;
+  }
+}
+

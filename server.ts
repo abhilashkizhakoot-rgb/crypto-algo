@@ -154,9 +154,13 @@ async function startServer() {
         // Set actual balance from Delta if available, otherwise fallback to existing mock balance
         let balanceUsdt = creds.account_balance_usdt;
         if (data && data.result && Array.isArray(data.result)) {
-          const usdtBal = data.result.find((item: any) => item.asset_symbol === "USDT" || item.asset === "USDT");
+          const usdtBal = data.result.find((item: any) => {
+            const sym = (item.asset_symbol || item.asset || item.symbol || (item.asset && item.asset.symbol) || "").toString().toUpperCase();
+            return sym === "USDT";
+          });
           if (usdtBal) {
-            balanceUsdt = parseFloat(usdtBal.balance || usdtBal.available_balance || balanceUsdt);
+            const val = usdtBal.balance !== undefined ? usdtBal.balance : (usdtBal.available_balance !== undefined ? usdtBal.available_balance : (usdtBal.wallet_balance !== undefined ? usdtBal.wallet_balance : "0"));
+            balanceUsdt = parseFloat(val);
           }
         }
         dbManager.updateCredentials({

@@ -16,7 +16,7 @@ import {
 } from "./types.js";
 import { FinBertSentimentModel } from "./finbert.js";
 import { fetchLiveRSSHeadlines } from "./rss.js";
-import { placeDeltaMarketOrder } from "./delta_client.js";
+import { placeDeltaMarketOrder, getDeltaWalletBalance } from "./delta_client.js";
 
 class TradingEngine {
   private candles1m: Candlestick[] = [];
@@ -31,6 +31,7 @@ class TradingEngine {
   private protectionRemainingSeconds: number | null = null;
   private currentRegime: MarketRegime = MarketRegime.RANGE_BOUND;
   private regimeConfidence: number = 0.5;
+  private tickCount: number = 0;
 
   private get activeTrade(): Trade | null {
     if (dbManager.isPaperMode()) {
@@ -383,6 +384,23 @@ class TradingEngine {
 
   private async tick() {
     const config = dbManager.getConfig();
+    this.tickCount++;
+
+    // Periodically (every 15 seconds) fetch actual USDT wallet balance from Delta Exchange in live mode
+    if (!dbManager.isPaperMode() && this.tickCount % 3 === 0) {
+      const creds = dbManager.getCredentials();
+      if (creds.connection_status === "CONNECTED") {
+        getDeltaWalletBalance(creds).then((liveBal) => {
+          if (liveBal !== null) {
+            dbManager.updateCredentials({
+              account_balance_usdt: liveBal,
+            });
+          }
+        }).catch((err) => {
+          console.error("[TradingEngine] Failed to sync real-time Delta Exchange balance:", err);
+        });
+      }
+    }
 
     // 1. Simulate minor price fluctuations (random walk centered around actual/historical trends)
     // We occasionally pull from Binance public ticker to keep the feed incredibly real
@@ -1056,6 +1074,15 @@ class TradingEngine {
               delta_response: res.response_data,
             }
           });
+          // Immediately sync balance
+          getDeltaWalletBalance(creds).then((liveBal) => {
+            if (liveBal !== null) {
+              dbManager.updateCredentials({
+                account_balance_usdt: liveBal,
+              });
+              this.log(`💰 Real-time balance updated from Delta Exchange: $${liveBal.toFixed(2)} USDT`);
+            }
+          }).catch(() => {});
         } else {
           this.log(`❌ Delta Exchange API returned rejection error: ${res.message}`);
         }
@@ -1212,6 +1239,15 @@ class TradingEngine {
       placeDeltaMarketOrder(creds, "BTCUSD", closeSide, trade.quantity_btc).then((res) => {
         if (res.success) {
           this.log(`✅ Delta Exchange position successfully closed! Exit Order ID: ${res.order_id}`);
+          // Immediately sync balance
+          getDeltaWalletBalance(creds).then((liveBal) => {
+            if (liveBal !== null) {
+              dbManager.updateCredentials({
+                account_balance_usdt: liveBal,
+              });
+              this.log(`💰 Real-time balance updated from Delta Exchange: $${liveBal.toFixed(2)} USDT`);
+            }
+          }).catch(() => {});
         } else {
           this.log(`❌ Delta Exchange API returned exit rejection error: ${res.message}`);
         }
@@ -1306,6 +1342,15 @@ class TradingEngine {
               delta_response: res.response_data,
             }
           });
+          // Immediately sync balance
+          getDeltaWalletBalance(creds).then((liveBal) => {
+            if (liveBal !== null) {
+              dbManager.updateCredentials({
+                account_balance_usdt: liveBal,
+              });
+              this.log(`💰 Real-time balance updated from Delta Exchange: $${liveBal.toFixed(2)} USDT`);
+            }
+          }).catch(() => {});
         } else {
           this.log(`❌ Delta Exchange API returned rejection error for manual order: ${res.message}`);
         }
