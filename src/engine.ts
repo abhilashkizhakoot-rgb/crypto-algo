@@ -102,6 +102,21 @@ class TradingEngine {
     return this.candles1m;
   }
 
+  public calculateAverageSentiment(headlines: NewsHeadline[]): number {
+    if (headlines.length === 0) return 0;
+    // A simple arithmetic mean over multiple headlines dilutes high-conviction signals due to the high density of neutral news.
+    // Instead, we compute a weighted average where articles with stronger sentiment (|score| > 0.15) are weighted 4x more than neutral ones.
+    const weightedSum = headlines.reduce((sum, h) => {
+      const weight = Math.abs(h.sentiment_score) > 0.15 ? 4.0 : 1.0;
+      return sum + h.sentiment_score * weight;
+    }, 0);
+    const totalWeight = headlines.reduce((sum, h) => {
+      const weight = Math.abs(h.sentiment_score) > 0.15 ? 4.0 : 1.0;
+      return sum + weight;
+    }, 0);
+    return totalWeight > 0 ? Number((weightedSum / totalWeight).toFixed(4)) : 0;
+  }
+
   public getCurrentCheckpoints() {
     const config = dbManager.getConfig();
     const closes = this.candles1m.map((c) => c.close);
@@ -119,9 +134,7 @@ class TradingEngine {
 
     // Get headlines sentiment
     const headlines = dbManager.getHeadlines().slice(0, 15);
-    const avgSentiment = headlines.length > 0
-      ? headlines.reduce((acc, h) => acc + h.sentiment_score, 0) / headlines.length
-      : 0;
+    const avgSentiment = this.calculateAverageSentiment(headlines);
 
     let probabilityLong = 0.5;
     let trendFactor = isBullTrend1m ? 0.2 : -0.2;
@@ -800,7 +813,7 @@ class TradingEngine {
 
     // Get headlines sentiment
     const headlines = dbManager.getHeadlines().slice(0, 15);
-    const avgSentiment = headlines.reduce((acc, h) => acc + h.sentiment_score, 0) / (headlines.length || 1);
+    const avgSentiment = this.calculateAverageSentiment(headlines);
 
     // 1. CatBoost Probability Emulation: Maps Indicators & Sentiment into a final probability
     // Bullish signals: trend is up, RSI is positive but not overbought, sentiment is positive
@@ -1182,7 +1195,7 @@ class TradingEngine {
 
     // Sentiment Reversal check: if current sentiment flips extremely negative for LONG, or positive for SHORT
     const headlines = dbManager.getHeadlines().slice(0, 10);
-    const currentSentiment = headlines.reduce((acc, h) => acc + h.sentiment_score, 0) / (headlines.length || 1);
+    const currentSentiment = this.calculateAverageSentiment(headlines);
     if (direction === TradeDirection.LONG && currentSentiment < -0.45) {
       shouldExit = true;
       reason = ExitReason.SENTIMENT_REVERSAL;
