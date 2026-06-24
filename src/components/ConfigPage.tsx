@@ -46,7 +46,7 @@ export default function ConfigPage({
     setMlConfig(config.ml_settings);
     setSentimentConfig(config.sentiment_settings);
     setRiskConfig(config.risk_management);
-  }, [config]);
+  }, []); // Run only on mount to prevent background refreshes from clearing user edits
 
   const handleSaveCategory = async (category: string, data: any) => {
     try {

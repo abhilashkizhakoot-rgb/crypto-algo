@@ -42,7 +42,16 @@ import ApiAnalyzer from "./components/ApiAnalyzer.tsx";
 import CheckpointsPage from "./components/CheckpointsPage.tsx";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"dashboard" | "analytics" | "trades" | "config" | "manual" | "api_analyzer" | "checkpoints">("dashboard");
+  const [activeTab, setActiveTabState] = useState<"dashboard" | "analytics" | "trades" | "config" | "manual" | "api_analyzer" | "checkpoints">(() => {
+    const saved = localStorage.getItem("scalper_active_tab");
+    const allowed = ["dashboard", "analytics", "trades", "config", "manual", "api_analyzer", "checkpoints"];
+    return (saved && allowed.includes(saved)) ? (saved as any) : "dashboard";
+  });
+
+  const setActiveTab = (tab: "dashboard" | "analytics" | "trades" | "config" | "manual" | "api_analyzer" | "checkpoints") => {
+    localStorage.setItem("scalper_active_tab", tab);
+    setActiveTabState(tab);
+  };
 
   // State Buffers
   const [status, setStatus] = useState<any>({
