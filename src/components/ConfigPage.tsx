@@ -18,6 +18,20 @@ import {
 } from "lucide-react";
 import { StrategyConfig, ConfigHistoryEntry, NewsSource } from "../types.js";
 
+const AVAILABLE_GATES = [
+  { id: "catboost", label: "CatBoost AI Prediction Threshold" },
+  { id: "regime", label: "Market Regime Lock" },
+  { id: "trend", label: "Exponential Trend Alignment" },
+  { id: "sentiment", label: "Sentiment Engine Alignment" },
+  { id: "volume", label: "Relative Volume Confirmation" },
+  { id: "news", label: "News Event Protection Lock" },
+  { id: "limit", label: "Daily Trade Count Limit" },
+  { id: "adx", label: "ADX Trend Strength Filter" },
+  { id: "equity", label: "Minimum Account Equity Check" },
+  { id: "credentials", label: "Exchange API Credentials Validation" },
+  { id: "cooldown", label: "Loss Streak Cooldown Protection" },
+];
+
 interface ConfigPageProps {
   config: StrategyConfig;
   profiles: Record<string, StrategyConfig>;
@@ -85,6 +99,17 @@ export default function ConfigPage({
     } catch (e) {
       alert("Failed to commit settings, check server connection.");
     }
+  };
+
+  const toggleGateBypass = (gateId: string) => {
+    const currentSkipped = generalConfig.skipped_gates || [];
+    let updated: string[];
+    if (currentSkipped.includes(gateId)) {
+      updated = currentSkipped.filter((g) => g !== gateId);
+    } else {
+      updated = [...currentSkipped, gateId];
+    }
+    setGeneralConfig({ ...generalConfig, skipped_gates: updated });
   };
 
   const handleSaveProfile = async () => {
@@ -422,6 +447,45 @@ export default function ConfigPage({
                   id="config-default-quantity-btc"
                 />
                 <p className="text-[10px] text-slate-400">Position size for auto-signals and default for manual entries (e.g. 0.001 BTC)</p>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-200 pt-5 space-y-4">
+              <div>
+                <h4 className="text-xs font-bold font-sans text-slate-700 uppercase flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-amber-500" />
+                  Checkpoint Gates Bypass (Skip Gates)
+                </h4>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Select which trade entry checklist gates to bypass. Bypassed gates will always evaluate as passing and won't block automated order executions.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-50 border border-slate-200/60 rounded-xl p-4">
+                {AVAILABLE_GATES.map((gate) => {
+                  const isBypassed = (generalConfig.skipped_gates || []).includes(gate.id);
+                  return (
+                    <label
+                      key={gate.id}
+                      className="flex items-start gap-3 p-2.5 rounded-lg border hover:bg-white transition-all cursor-pointer select-none bg-slate-50 border-transparent hover:border-slate-200/80"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isBypassed}
+                        onChange={() => toggleGateBypass(gate.id)}
+                        className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 shrink-0"
+                      />
+                      <div className="space-y-0.5">
+                        <span className="text-xs font-sans font-medium text-slate-700">
+                          {gate.label}
+                        </span>
+                        <p className="text-[10px] text-slate-400">
+                          {isBypassed ? "✓ Force Passing (Skipped)" : "Active evaluation gate"}
+                        </p>
+                      </div>
+                    </label>
+                  );
+                })}
               </div>
             </div>
 

@@ -43,6 +43,7 @@ const DEFAULT_CONFIG: StrategyConfig = {
     cooldown_minutes: 30,
     max_trades_per_day: 8,
     is_paper_trading: true,
+    skipped_gates: [],
   },
   ml_settings: {
     entry_threshold_long: 0.80,
@@ -707,6 +708,12 @@ class DatabaseManager {
 
   public getConfig(): StrategyConfig {
     let changed = false;
+    if (this.cache?.config?.general) {
+      if (!this.cache.config.general.skipped_gates) {
+        this.cache.config.general.skipped_gates = [];
+        changed = true;
+      }
+    }
     if (this.cache?.config?.risk_management) {
       if (this.cache.config.risk_management.default_quantity_btc === undefined) {
         this.cache.config.risk_management.default_quantity_btc = 0.001;

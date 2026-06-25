@@ -13,6 +13,7 @@ import {
   TradeDirection,
   ExitReason,
   TradingSignal,
+  StrategyConfig,
 } from "./types.js";
 import { FinBertSentimentModel } from "./finbert.js";
 import { fetchLiveRSSHeadlines } from "./rss.js";
@@ -46,6 +47,25 @@ class TradingEngine {
     } else {
       this.liveActiveTrade = trade;
     }
+  }
+
+  private isGateSkipped(config: StrategyConfig, name: string): boolean {
+    const skippedGates = config.general.skipped_gates || [];
+    return skippedGates.some(
+      (g) =>
+        g.toLowerCase() === name.toLowerCase() ||
+        (name.toLowerCase().includes("trend") && g.toLowerCase().includes("trend")) ||
+        (name.toLowerCase().includes("catboost") && g.toLowerCase().includes("catboost")) ||
+        (name.toLowerCase().includes("regime") && g.toLowerCase().includes("regime")) ||
+        (name.toLowerCase().includes("sentiment") && g.toLowerCase().includes("sentiment")) ||
+        (name.toLowerCase().includes("volume") && g.toLowerCase().includes("volume")) ||
+        (name.toLowerCase().includes("news") && g.toLowerCase().includes("news")) ||
+        (name.toLowerCase().includes("limit") && g.toLowerCase().includes("limit")) ||
+        (name.toLowerCase().includes("adx") && g.toLowerCase().includes("adx")) ||
+        (name.toLowerCase().includes("equity") && g.toLowerCase().includes("equity")) ||
+        (name.toLowerCase().includes("credentials") && g.toLowerCase().includes("credentials")) ||
+        (name.toLowerCase().includes("cooldown") && g.toLowerCase().includes("cooldown"))
+    );
   }
 
   constructor() {
@@ -348,15 +368,23 @@ class TradingEngine {
       priority: "CRITICAL",
     });
 
+    // Apply bypassed/skipped gates
+    for (const c of conditions) {
+      if (this.isGateSkipped(config, c.name)) {
+        c.met = true;
+        c.current_value = `${c.current_value} (BYPASS)`;
+      }
+    }
+
     // Calculate overall entry score
     let entryScore = 0;
     if (signalDirection !== "NEUTRAL") {
-      if (pLongMet || pShortMet) entryScore += 35;
-      if (regimeAligned) entryScore += 15;
-      if (trendAligned) entryScore += 15;
-      if (sentAligned) entryScore += 15;
-      if (relVolume > 1.3) entryScore += 10;
-      if (adxValue > 22) entryScore += 10;
+      if (pLongMet || pShortMet || this.isGateSkipped(config, "CatBoost AI Prediction")) entryScore += 35;
+      if (regimeAligned || this.isGateSkipped(config, "Market Regime Filter")) entryScore += 15;
+      if (trendAligned || this.isGateSkipped(config, "Exponential Trend Alignment")) entryScore += 15;
+      if (sentAligned || this.isGateSkipped(config, "Sentiment Engine Alignment")) entryScore += 15;
+      if (relVolume > 1.3 || this.isGateSkipped(config, "Relative Volume Confirmation")) entryScore += 10;
+      if (adxValue > 22 || this.isGateSkipped(config, "ADX Trend Strength Filter")) entryScore += 10;
     }
 
     return {
@@ -1027,15 +1055,23 @@ class TradingEngine {
       required: "No active cooldown from consecutive losses",
     });
 
+    // Apply bypassed/skipped gates
+    for (const c of conditions) {
+      if (this.isGateSkipped(config, c.name)) {
+        c.met = true;
+        c.current_value = `${c.current_value} (BYPASS)`;
+      }
+    }
+
     // Calculate Entry Score
     let entryScore = 0;
     if (signalDirection !== "NEUTRAL") {
-      if (pLongMet || pShortMet) entryScore += 35;
-      if (regimeAligned) entryScore += 15;
-      if (trendAligned) entryScore += 15;
-      if (sentAligned) entryScore += 15;
-      if (relVolume > 1.3) entryScore += 10;
-      if (adxValue > 22) entryScore += 10;
+      if (pLongMet || pShortMet || this.isGateSkipped(config, "CatBoost AI Threshold")) entryScore += 35;
+      if (regimeAligned || this.isGateSkipped(config, "Market Regime Filter")) entryScore += 15;
+      if (trendAligned || this.isGateSkipped(config, "Trend Alignment (EMA 21/50)")) entryScore += 15;
+      if (sentAligned || this.isGateSkipped(config, "Sentiment Engine Alignment")) entryScore += 15;
+      if (relVolume > 1.3 || this.isGateSkipped(config, "Relative Volume Confirmation")) entryScore += 10;
+      if (adxValue > 22 || this.isGateSkipped(config, "ADX Trend Strength Filter")) entryScore += 10;
     }
 
     const allConditionsMet = conditions.every((c) => c.met);
