@@ -448,6 +448,41 @@ export default function ConfigPage({
                 />
                 <p className="text-[10px] text-slate-400">Position size for auto-signals and default for manual entries (e.g. 0.001 BTC)</p>
               </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-400 uppercase">General System Cooldown (Minutes)</label>
+                <input
+                  type="number"
+                  value={generalConfig.cooldown_minutes !== undefined ? generalConfig.cooldown_minutes : 30}
+                  onChange={(e) => setGeneralConfig({ ...generalConfig, cooldown_minutes: parseInt(e.target.value) || 30 })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 outline-none font-mono"
+                />
+                <p className="text-[10px] text-slate-400">Mandatory cooldown lockout duration between any subsequent trade entry executions.</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-400 uppercase">Weekly Drawdown Circuit Breaker (%)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  value={riskConfig.weekly_loss_limit_pct !== undefined ? riskConfig.weekly_loss_limit_pct : 5.0}
+                  onChange={(e) => setRiskConfig({ ...riskConfig, weekly_loss_limit_pct: parseFloat(e.target.value) || 5.0 })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 outline-none font-mono"
+                />
+                <p className="text-[10px] text-slate-400">Halts trading until the next calendar week start when weekly cumulative loss percent is reached.</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-400 uppercase">Intra-Trade Drawdown Limit (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={riskConfig.intra_trade_drawdown_limit_pct !== undefined ? riskConfig.intra_trade_drawdown_limit_pct : 1.5}
+                  onChange={(e) => setRiskConfig({ ...riskConfig, intra_trade_drawdown_limit_pct: parseFloat(e.target.value) || 1.5 })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 outline-none font-mono"
+                />
+                <p className="text-[10px] text-slate-400">Peak permitted unrealized drawdown within any single open position before emergency closure.</p>
+              </div>
             </div>
 
             <div className="border-t border-slate-200 pt-5 space-y-4">
@@ -536,6 +571,31 @@ export default function ConfigPage({
                 />
                 <p className="text-[10px] text-slate-400">Maximum P(LONG) threshold to allow short sell entry (Recommended: 0.20)</p>
               </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-400 uppercase">Active Classifier Model Version</label>
+                <input
+                  type="text"
+                  value={mlConfig.model_version !== undefined ? mlConfig.model_version : "v2.4.1"}
+                  onChange={(e) => setMlConfig({ ...mlConfig, model_version: e.target.value || "v2.4.1" })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 outline-none font-mono"
+                />
+                <p className="text-[10px] text-slate-400">Model registry tag identifier (e.g. v2.4.1, production-catboost)</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-400 uppercase">Walk-Forward Training Window (Months)</label>
+                <input
+                  type="number"
+                  step="1"
+                  min="1"
+                  max="36"
+                  value={mlConfig.training_window_months !== undefined ? mlConfig.training_window_months : 6}
+                  onChange={(e) => setMlConfig({ ...mlConfig, training_window_months: parseInt(e.target.value) || 6 })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 outline-none font-mono"
+                />
+                <p className="text-[10px] text-slate-400">Historical dataset length used during walk-forward retraining (Recommended: 6 months)</p>
+              </div>
             </div>
 
             <div className="bg-slate-50/50 p-4 border border-slate-200 rounded-xl space-y-3">
@@ -615,6 +675,106 @@ export default function ConfigPage({
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 outline-none font-mono"
                 />
                 <p className="text-[10px] text-slate-400">Weighted average threshold needed to short sell (Default: -0.25)</p>
+              </div>
+            </div>
+
+            {/* Safeguards and Lockdown Window */}
+            <div className="bg-slate-50/50 p-4 border border-slate-200 rounded-xl space-y-4">
+              <h4 className="text-xs font-sans font-bold text-indigo-700 uppercase">Sentiment Momentum & Safeguards</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-600">
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={sentimentConfig.require_momentum_long !== undefined ? sentimentConfig.require_momentum_long : true}
+                    onChange={(e) => setSentimentConfig({ ...sentimentConfig, require_momentum_long: e.target.checked })}
+                    className="rounded border-slate-300 bg-white text-indigo-600 focus:ring-indigo-400"
+                  />
+                  <span>Require positive sentiment momentum for LONG trade entry</span>
+                </label>
+
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={sentimentConfig.require_momentum_short !== undefined ? sentimentConfig.require_momentum_short : true}
+                    onChange={(e) => setSentimentConfig({ ...sentimentConfig, require_momentum_short: e.target.checked })}
+                    className="rounded border-slate-300 bg-white text-indigo-600 focus:ring-indigo-400"
+                  />
+                  <span>Require negative sentiment momentum for SHORT trade entry</span>
+                </label>
+
+                <label className="flex items-center gap-2.5 cursor-pointer md:col-span-2">
+                  <input
+                    type="checkbox"
+                    checked={sentimentConfig.block_on_critical_keywords !== undefined ? sentimentConfig.block_on_critical_keywords : true}
+                    onChange={(e) => setSentimentConfig({ ...sentimentConfig, block_on_critical_keywords: e.target.checked })}
+                    className="rounded border-slate-300 bg-white text-indigo-600 focus:ring-indigo-400"
+                  />
+                  <span>Actively block trade entries when a critical keyword is matched in RSS headlines</span>
+                </label>
+              </div>
+
+              <div className="space-y-1.5 pt-2">
+                <label className="text-xs font-mono text-slate-400 uppercase">News Protection Lockout Duration (Minutes)</label>
+                <input
+                  type="number"
+                  step="1"
+                  min="1"
+                  value={sentimentConfig.protection_window_minutes !== undefined ? sentimentConfig.protection_window_minutes : 15}
+                  onChange={(e) => setSentimentConfig({ ...sentimentConfig, protection_window_minutes: parseInt(e.target.value) || 15 })}
+                  className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:ring-1 focus:ring-indigo-400 outline-none font-mono"
+                />
+                <p className="text-[10px] text-slate-400">Lock duration (minutes) for bypassing trade entries after critical keyword match.</p>
+              </div>
+            </div>
+
+            {/* Individual News Source Weights and Refresh Intervals */}
+            <div className="bg-slate-50/50 p-4 border border-slate-200 rounded-xl space-y-4">
+              <div>
+                <h4 className="text-xs font-sans font-bold text-indigo-700 uppercase">RSS Feed Configuration (Weights & Refresh Intervals)</h4>
+                <p className="text-[10px] text-slate-400 mt-1">Configure individual weights (%) contributing to sentiment index and RSS feed fetch intervals (mins).</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {Object.keys(sentimentConfig.weights || {}).map((source) => {
+                  const src = source as NewsSource;
+                  return (
+                    <div key={src} className="bg-white border border-slate-200/80 rounded-xl p-3 space-y-3 shadow-sm">
+                      <div className="flex justify-between items-center border-b border-slate-100 pb-1.5">
+                        <span className="text-xs font-bold text-slate-700 font-sans tracking-tight">{src}</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-mono text-slate-400 uppercase">Weight (%)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={sentimentConfig.weights[src] !== undefined ? sentimentConfig.weights[src] : 20}
+                            onChange={(e) => {
+                              const updatedWeights = { ...sentimentConfig.weights, [src]: parseInt(e.target.value) || 0 };
+                              setSentimentConfig({ ...sentimentConfig, weights: updatedWeights });
+                            }}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-md p-1.5 text-xs text-slate-800 focus:ring-1 focus:ring-indigo-400 outline-none font-mono"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-mono text-slate-400 uppercase">Refresh (Min)</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="1440"
+                            value={sentimentConfig.refresh_rates_min && sentimentConfig.refresh_rates_min[src] !== undefined ? sentimentConfig.refresh_rates_min[src] : 5}
+                            onChange={(e) => {
+                              const updatedIntervals = { ...sentimentConfig.refresh_rates_min, [src]: parseInt(e.target.value) || 5 };
+                              setSentimentConfig({ ...sentimentConfig, refresh_rates_min: updatedIntervals });
+                            }}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-md p-1.5 text-xs text-slate-800 focus:ring-1 focus:ring-indigo-400 outline-none font-mono"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
