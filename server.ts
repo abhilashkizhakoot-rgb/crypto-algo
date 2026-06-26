@@ -18,6 +18,18 @@ async function startServer() {
   // Body parser
   app.use(express.json());
 
+  // Enable CORS middleware for all API routes (important for sandboxed iframes)
+  app.use((req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, api-key, signature, timestamp");
+    if (req.method === "OPTIONS") {
+      res.sendStatus(200);
+    } else {
+      next();
+    }
+  });
+
   // ----------------------------------------------------
   // REST API: Exchange Configuration
   // ----------------------------------------------------

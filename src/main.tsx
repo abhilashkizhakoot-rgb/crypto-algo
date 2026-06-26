@@ -2,49 +2,7 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
-
-// Helper to determine the API Base URL in sandboxed / iframe environments
-export function getApiBaseUrl(): string {
-  if (typeof window !== "undefined" && window.location && window.location.protocol.startsWith("http")) {
-    return window.location.origin;
-  }
-  
-  if (typeof document !== "undefined") {
-    // Check currentScript
-    if (document.currentScript && (document.currentScript as HTMLScriptElement).src) {
-      const src = (document.currentScript as HTMLScriptElement).src;
-      if (src.startsWith("http")) {
-        try {
-          return new URL(src).origin;
-        } catch (e) {}
-      }
-    }
-
-    // Traverse all script tags
-    const scripts = document.getElementsByTagName("script");
-    for (let i = 0; i < scripts.length; i++) {
-      const src = scripts[i].src;
-      if (src && src.startsWith("http")) {
-        try {
-          return new URL(src).origin;
-        } catch (e) {}
-      }
-    }
-
-    // Traverse all link tags
-    const links = document.getElementsByTagName("link");
-    for (let i = 0; i < links.length; i++) {
-      const href = links[i].href;
-      if (href && href.startsWith("http")) {
-        try {
-          return new URL(href).origin;
-        } catch (e) {}
-      }
-    }
-  }
-
-  return "";
-}
+import { getApiBaseUrl } from './utils/api.ts';
 
 // Global Patch for window.fetch to handle relative requests under sandboxed iframes
 const originalFetch = window.fetch;

@@ -203,6 +203,20 @@ class TradingEngine {
     const ema50 = hasEnoughData ? this.calculateEMA(closes, 50) : [this.currentPrice];
     const rsi14 = hasEnoughData ? this.calculateRSI(closes, 14) : [50];
 
+    const adx14 = hasEnoughData ? this.calculateADX(this.candles1m, 14) : [25];
+    const adxValue = hasEnoughData ? adx14[lastIdx] : 25;
+
+    const volumes = this.candles1m.map((c) => c.volume);
+    let relVolume = 1.0;
+    if (hasEnoughData && volumes.length >= 20) {
+      const currentVolume = volumes[lastIdx];
+      const sumPrevVolumes = volumes.slice(lastIdx - 20, lastIdx).reduce((a, b) => a + b, 0);
+      const avgPrevVolume = sumPrevVolumes / 20;
+      relVolume = avgPrevVolume > 0 ? currentVolume / avgPrevVolume : 1.0;
+    } else if (hasEnoughData) {
+      relVolume = 1.35;
+    }
+
     const isBullTrend1m = hasEnoughData ? ema21[lastIdx] > ema50[lastIdx] : true;
     const isBearTrend1m = hasEnoughData ? ema21[lastIdx] < ema50[lastIdx] : false;
 
@@ -210,11 +224,29 @@ class TradingEngine {
     const headlines = dbManager.getHeadlines().slice(0, 15);
     const avgSentiment = this.calculateAverageSentiment(headlines);
 
+    const currentPrice = this.currentPrice;
+    const currentRsi = rsi14[lastIdx] !== undefined ? rsi14[lastIdx] : 50;
+    const bb = this.calculateBollingerBands(closes, 20, 2);
+
+    let isRsiOverbought = currentRsi > 70;
+    let isRsiOversold = currentRsi < 30;
+
+    let isPriceBbOverbought = currentPrice >= bb.upper * 0.9995;
+    let isPriceBbOversold = currentPrice <= bb.lower * 1.0005;
+
     let probabilityLong = 0.5;
     let trendFactor = isBullTrend1m ? 0.2 : -0.2;
-    let rsiFactor = (((rsi14[lastIdx] !== undefined ? rsi14[lastIdx] : 50)) - 50) / 100;
+    let rsiFactor = (currentRsi - 50) / 100;
     const combinedScore = trendFactor + rsiFactor * 0.4 + avgSentiment * 0.4;
     probabilityLong = Number((1 / (1 + Math.exp(-combinedScore * 4))).toFixed(4));
+
+    // Accuracy dampening to prevent buying tops or shorting bottoms
+    if (isRsiOverbought || isPriceBbOverbought) {
+      if (probabilityLong > 0.70) probabilityLong = 0.70;
+    }
+    if (isRsiOversold || isPriceBbOversold) {
+      if (probabilityLong < 0.30) probabilityLong = 0.30;
+    }
 
     let signalDirection: "LONG" | "SHORT" | "NEUTRAL" = "NEUTRAL";
     if (probabilityLong > config.ml_settings.entry_threshold_long) {
@@ -285,7 +317,6 @@ class TradingEngine {
     });
 
     // C5: Relative Volume Confirmation (Simulated/Calculated ratio)
-    const relVolume = 1.35;
     conditions.push({
       name: "Relative Volume Confirmation",
       met: relVolume > 1.3,
@@ -321,7 +352,6 @@ class TradingEngine {
     });
 
     // C8: ADX Trend Strength Filter
-    const adxValue = 24.5;
     conditions.push({
       name: "ADX Trend Strength Filter",
       met: adxValue > 22,
@@ -694,6 +724,107 @@ class TradingEngine {
     return atr;
   }
 
+  private calculateADX(candles: Candlestick[], period = 14): number[] {
+    const adx: number[] = [];
+    if (candles.length <= period * 2) {
+      return Array(candles.length).fill(25);
+    }
+
+    const tr: number[] = [];
+    const plusDM: number[] = [];
+    const minusDM: number[] = [];
+
+    for (let i = 1; i < candles.length; i++) {
+      const highDiff = candles[i].high - candles[i - 1].high;
+      const lowDiff = candles[i - 1].low - candles[i].low;
+
+      const h_l = candles[i].high - candles[i].low;
+      const h_pc = Math.abs(candles[i].high - candles[i - 1].close);
+      const l_pc = Math.abs(candles[i].low - candles[i - 1].close);
+      tr.push(Math.max(h_l, h_pc, l_pc));
+
+      if (highDiff > lowDiff && highDiff > 0) {
+        plusDM.push(highDiff);
+      } else {
+        plusDM.push(0);
+      }
+
+      if (lowDiff > highDiff && lowDiff > 0) {
+        minusDM.push(lowDiff);
+      } else {
+        minusDM.push(0);
+      }
+    }
+
+    let smoothedTR = 0;
+    let smoothedPlusDM = 0;
+    let smoothedMinusDM = 0;
+
+    for (let i = 0; i < period; i++) {
+      smoothedTR += tr[i];
+      smoothedPlusDM += plusDM[i];
+      smoothedMinusDM += minusDM[i];
+    }
+
+    const dxList: number[] = [];
+    const getDX = (trS: number, pdmS: number, mdmS: number) => {
+      if (trS === 0) return 0;
+      const plusDI = 100 * (pdmS / trS);
+      const minusDI = 100 * (mdmS / trS);
+      const diff = Math.abs(plusDI - minusDI);
+      const sum = plusDI + minusDI;
+      return sum === 0 ? 0 : 100 * (diff / sum);
+    };
+
+    dxList.push(getDX(smoothedTR, smoothedPlusDM, smoothedMinusDM));
+
+    for (let i = period; i < tr.length; i++) {
+      smoothedTR = smoothedTR - (smoothedTR / period) + tr[i];
+      smoothedPlusDM = smoothedPlusDM - (smoothedPlusDM / period) + plusDM[i];
+      smoothedMinusDM = smoothedMinusDM - (smoothedMinusDM / period) + minusDM[i];
+      dxList.push(getDX(smoothedTR, smoothedPlusDM, smoothedMinusDM));
+    }
+
+    let adxSum = 0;
+    for (let i = 0; i < period; i++) {
+      adxSum += dxList[i];
+    }
+
+    for (let i = 0; i < period + period; i++) {
+      adx.push(25);
+    }
+
+    let smoothedADX = adxSum / period;
+    adx.push(smoothedADX);
+
+    for (let i = period; i < dxList.length; i++) {
+      smoothedADX = (smoothedADX * (period - 1) + dxList[i]) / period;
+      adx.push(smoothedADX);
+    }
+
+    while (adx.length < candles.length) {
+      adx.unshift(25);
+    }
+
+    return adx;
+  }
+
+  private calculateBollingerBands(data: number[], period = 20, multiplier = 2) {
+    if (data.length < period) {
+      const lastPrice = data[data.length - 1] || 0;
+      return { middle: lastPrice, upper: lastPrice, lower: lastPrice };
+    }
+    const lastElements = data.slice(data.length - period);
+    const mean = lastElements.reduce((sum, val) => sum + val, 0) / period;
+    const variance = lastElements.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / period;
+    const stdDev = Math.sqrt(variance);
+    return {
+      middle: mean,
+      upper: mean + multiplier * stdDev,
+      lower: mean - multiplier * stdDev
+    };
+  }
+
   // Layer 1: Market Regime Detection
   private detectMarketRegime() {
     const candles = this.candles1m;
@@ -705,10 +836,12 @@ class TradingEngine {
     const ema21 = this.calculateEMA(closes, 21);
     const ema50 = this.calculateEMA(closes, 50);
     const atr14 = this.calculateATR(candles, 14);
+    const adx14 = this.calculateADX(candles, 14);
 
     const lastIdx = closes.length - 1;
     const currentClose = closes[lastIdx];
     const currentAtr = atr14[lastIdx] || 50;
+    const currentAdx = adx14[lastIdx] || 25;
 
     // Calculate ATR Expansion (current ATR vs long term ATR)
     let sumAtrLong = 0;
@@ -723,7 +856,7 @@ class TradingEngine {
     const isBullAligned = ema9[lastIdx] > ema21[lastIdx] && ema21[lastIdx] > ema50[lastIdx];
     const isBearAligned = ema9[lastIdx] < ema21[lastIdx] && ema21[lastIdx] < ema50[lastIdx];
 
-    // Simple Directional ADX/Trend Strength heuristic
+    // Simple Directional trend direction count to combine with ADX
     let upwardCount = 0;
     let downwardCount = 0;
     for (let i = lastIdx - 14; i <= lastIdx; i++) {
@@ -741,15 +874,15 @@ class TradingEngine {
     } else if (atrExpansionRatio > 1.5) {
       regime = MarketRegime.HIGH_VOLATILITY;
       confidence = 0.7 + (atrExpansionRatio - 1.5) * 0.2;
-    } else if (isBullAligned && trendStrength > 0.4) {
+    } else if (isBullAligned && (currentAdx > 22 || trendStrength > 0.4)) {
       regime = MarketRegime.STRONG_UPTREND;
-      confidence = 0.6 + trendStrength * 0.35;
-    } else if (isBearAligned && trendStrength > 0.4) {
+      confidence = 0.6 + (currentAdx / 100) * 0.35;
+    } else if (isBearAligned && (currentAdx > 22 || trendStrength > 0.4)) {
       regime = MarketRegime.STRONG_DOWNTREND;
-      confidence = 0.6 + trendStrength * 0.35;
+      confidence = 0.6 + (currentAdx / 100) * 0.35;
     } else {
       regime = MarketRegime.RANGE_BOUND;
-      confidence = 0.5 + (1 - trendStrength) * 0.3;
+      confidence = 0.5 + (1 - (currentAdx / 100)) * 0.3;
     }
 
     confidence = Math.min(confidence, 0.99);
@@ -758,7 +891,7 @@ class TradingEngine {
       this.log(
         `Market Regime Shift detected: [${this.currentRegime}] → [${regime}] with confidence ${(
           confidence * 100
-        ).toFixed(1)}%. ADX Trend Strength: ${trendStrength.toFixed(2)}, ATR Expansion: ${atrExpansionRatio.toFixed(
+         ).toFixed(1)}%. Real ADX: ${currentAdx.toFixed(1)}, ATR Expansion: ${atrExpansionRatio.toFixed(
           2
         )}x`
       );
@@ -768,7 +901,7 @@ class TradingEngine {
         detected_at: new Date().toISOString(),
         regime,
         confidence,
-        adx_value: trendStrength * 50,
+        adx_value: currentAdx,
         atr_expansion_ratio: atrExpansionRatio,
         bb_width_percentile: regime === MarketRegime.LOW_VOLATILITY ? 10 : 60,
         ema_structure: isBullAligned ? "BULLISH_ALIGNED" : isBearAligned ? "BEARISH_ALIGNED" : "MIXED",
@@ -903,6 +1036,20 @@ class TradingEngine {
     const ema50 = this.calculateEMA(closes, 50);
     const rsi14 = this.calculateRSI(closes, 14);
 
+    const adx14 = this.calculateADX(this.candles1m, 14);
+    const adxValue = adx14[lastIdx] || 25;
+
+    const volumes = this.candles1m.map((c) => c.volume);
+    let relVolume = 1.0;
+    if (volumes.length >= 20) {
+      const currentVolume = volumes[lastIdx];
+      const sumPrevVolumes = volumes.slice(lastIdx - 20, lastIdx).reduce((a, b) => a + b, 0);
+      const avgPrevVolume = sumPrevVolumes / 20;
+      relVolume = avgPrevVolume > 0 ? currentVolume / avgPrevVolume : 1.0;
+    } else {
+      relVolume = 1.35;
+    }
+
     const isBullTrend1m = ema21[lastIdx] > ema50[lastIdx];
     const isBearTrend1m = ema21[lastIdx] < ema50[lastIdx];
 
@@ -913,16 +1060,42 @@ class TradingEngine {
     // 1. CatBoost Probability Emulation: Maps Indicators & Sentiment into a final probability
     // Bullish signals: trend is up, RSI is positive but not overbought, sentiment is positive
     // Bearish signals: trend is down, RSI is negative but not oversold, sentiment is negative
-    let probabilityLong = 0.5;
-    let probabilityShort = 0.5;
+    const currentRsi = rsi14[lastIdx] !== undefined ? rsi14[lastIdx] : 50;
+    const bb = this.calculateBollingerBands(closes, 20, 2);
 
+    let isRsiOverbought = currentRsi > 70;
+    let isRsiOversold = currentRsi < 30;
+
+    let isPriceBbOverbought = currentClose >= bb.upper * 0.9995;
+    let isPriceBbOversold = currentClose <= bb.lower * 1.0005;
+
+    let probabilityLong = 0.5;
     let sentimentFactor = avgSentiment; // -1 to +1
     let trendFactor = isBullTrend1m ? 0.2 : -0.2;
-    let rsiFactor = (rsi14[lastIdx] - 50) / 100; // -0.5 to 0.5
+    let rsiFactor = (currentRsi - 50) / 100; // -0.5 to 0.5
 
     const combinedScore = trendFactor + rsiFactor * 0.4 + sentimentFactor * 0.4;
     probabilityLong = Number((1 / (1 + Math.exp(-combinedScore * 4))).toFixed(4));
-    probabilityShort = Number((1 - probabilityLong).toFixed(4));
+
+    // Accuracy dampening: actively prevent buying top / shorting bottom
+    if (isRsiOverbought || isPriceBbOverbought) {
+      if (probabilityLong > 0.70) {
+        if (combinedScore > 0.38) {
+          this.log(`⚠️ Prevented FOMO LONG: Market overextended (RSI: ${currentRsi.toFixed(1)}, Price: $${currentClose.toFixed(2)} near BB Upper: $${bb.upper.toFixed(2)}). Entry blocked.`);
+        }
+        probabilityLong = 0.70;
+      }
+    }
+    if (isRsiOversold || isPriceBbOversold) {
+      if (probabilityLong < 0.30) {
+        if (combinedScore < -0.38) {
+          this.log(`⚠️ Prevented FOMO SHORT: Market oversold (RSI: ${currentRsi.toFixed(1)}, Price: $${currentClose.toFixed(2)} near BB Lower: $${bb.lower.toFixed(2)}). Entry blocked.`);
+        }
+        probabilityLong = 0.30;
+      }
+    }
+
+    let probabilityShort = Number((1 - probabilityLong).toFixed(4));
 
     // Determine signal direction
     let signalDirection: "LONG" | "SHORT" | "NEUTRAL" = "NEUTRAL";
@@ -986,8 +1159,7 @@ class TradingEngine {
       required: `LONG: > ${config.sentiment_settings.entry_threshold_long}, SHORT: < ${config.sentiment_settings.entry_threshold_short}`,
     });
 
-    // C5: Relative Volume Confirmation (Simulated 1.5 ratio)
-    const relVolume = 1.2 + Math.random() * 0.8;
+    // C5: Relative Volume Confirmation (Real ratio computed from volume average)
     conditions.push({
       name: "Relative Volume Confirmation",
       met: relVolume > 1.3,
@@ -1015,8 +1187,7 @@ class TradingEngine {
       required: `< ${config.general.max_trades_per_day} trades/day`,
     });
 
-    // C8: ADX Trend Strength Filter (represented by RSI trend)
-    const adxValue = 18 + Math.random() * 15;
+    // C8: ADX Trend Strength Filter (Real ADX computed from market candles)
     conditions.push({
       name: "ADX Trend Strength Filter",
       met: adxValue > 22,

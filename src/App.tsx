@@ -31,6 +31,7 @@ import {
   ConnectionStatus,
 } from "./types.js";
 import { safeFormatTime } from "./utils/format";
+import { getApiBaseUrl } from "./utils/api.ts";
 
 // Import modular components
 import Dashboard from "./components/Dashboard.tsx";
@@ -196,7 +197,10 @@ export default function App() {
     // 1. Establish SSE Server Sent Events Real-Time Stream
     let eventSource: EventSource | null = null;
     try {
-      const sseUrl = new URL("/api/stream", window.location.href).href;
+      const baseUrl = getApiBaseUrl() || window.location.origin;
+      const sseUrl = baseUrl && baseUrl.startsWith("http")
+        ? new URL("/api/stream", baseUrl).href
+        : "/api/stream";
       eventSource = new EventSource(sseUrl);
       eventSource.onmessage = (event) => {
         try {
