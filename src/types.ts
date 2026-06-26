@@ -159,6 +159,8 @@ export interface StrategyConfig {
     max_trades_per_day: number;
     is_paper_trading: boolean;
     skipped_gates?: string[];
+    relative_volume_threshold?: number;
+    adx_threshold?: number;
   };
   ml_settings: {
     entry_threshold_long: number; // e.g. 0.80

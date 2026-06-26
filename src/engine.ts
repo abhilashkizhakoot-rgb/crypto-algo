@@ -193,6 +193,9 @@ class TradingEngine {
 
   public getCurrentCheckpoints() {
     const config = dbManager.getConfig();
+    const relVolThreshold = config.general.relative_volume_threshold !== undefined ? config.general.relative_volume_threshold : 1.3;
+    const adxThreshold = config.general.adx_threshold !== undefined ? config.general.adx_threshold : 22.0;
+
     const closes = this.candles1m.map((c) => c.close);
     
     // Fallback values if closes.length is less than 50
@@ -319,9 +322,9 @@ class TradingEngine {
     // C5: Relative Volume Confirmation (Simulated/Calculated ratio)
     conditions.push({
       name: "Relative Volume Confirmation",
-      met: relVolume > 1.3,
+      met: relVolume > relVolThreshold,
       current_value: `${relVolume.toFixed(2)}x`,
-      required: "> 1.3x above 20-period MA",
+      required: `> ${relVolThreshold}x above 20-period MA`,
       description: "Validates that trade has supporting transaction volume to avoid false breakups.",
       priority: "MEDIUM",
     });
@@ -354,9 +357,9 @@ class TradingEngine {
     // C8: ADX Trend Strength Filter
     conditions.push({
       name: "ADX Trend Strength Filter",
-      met: adxValue > 22,
+      met: adxValue > adxThreshold,
       current_value: `${adxValue.toFixed(1)}`,
-      required: "ADX(14) > 22",
+      required: `ADX(14) > ${adxThreshold}`,
       description: "Average Directional Index (ADX) confirms strong directional trend is established.",
       priority: "MEDIUM",
     });
@@ -413,8 +416,8 @@ class TradingEngine {
       if (regimeAligned || this.isGateSkipped(config, "Market Regime Filter")) entryScore += 15;
       if (trendAligned || this.isGateSkipped(config, "Exponential Trend Alignment")) entryScore += 15;
       if (sentAligned || this.isGateSkipped(config, "Sentiment Engine Alignment")) entryScore += 15;
-      if (relVolume > 1.3 || this.isGateSkipped(config, "Relative Volume Confirmation")) entryScore += 10;
-      if (adxValue > 22 || this.isGateSkipped(config, "ADX Trend Strength Filter")) entryScore += 10;
+      if (relVolume > relVolThreshold || this.isGateSkipped(config, "Relative Volume Confirmation")) entryScore += 10;
+      if (adxValue > adxThreshold || this.isGateSkipped(config, "ADX Trend Strength Filter")) entryScore += 10;
     }
 
     return {
@@ -827,6 +830,9 @@ class TradingEngine {
 
   // Layer 1: Market Regime Detection
   private detectMarketRegime() {
+    const config = dbManager.getConfig();
+    const adxThreshold = config.general.adx_threshold !== undefined ? config.general.adx_threshold : 22.0;
+
     const candles = this.candles1m;
     const closes = candles.map((c) => c.close);
     if (closes.length < 50) return;
@@ -874,10 +880,10 @@ class TradingEngine {
     } else if (atrExpansionRatio > 1.5) {
       regime = MarketRegime.HIGH_VOLATILITY;
       confidence = 0.7 + (atrExpansionRatio - 1.5) * 0.2;
-    } else if (isBullAligned && (currentAdx > 22 || trendStrength > 0.4)) {
+    } else if (isBullAligned && (currentAdx > adxThreshold || trendStrength > 0.4)) {
       regime = MarketRegime.STRONG_UPTREND;
       confidence = 0.6 + (currentAdx / 100) * 0.35;
-    } else if (isBearAligned && (currentAdx > 22 || trendStrength > 0.4)) {
+    } else if (isBearAligned && (currentAdx > adxThreshold || trendStrength > 0.4)) {
       regime = MarketRegime.STRONG_DOWNTREND;
       confidence = 0.6 + (currentAdx / 100) * 0.35;
     } else {
@@ -1019,6 +1025,9 @@ class TradingEngine {
   // Layer 3: CatBoost Prediction and Entry Scanners
   private runScanners() {
     const config = dbManager.getConfig();
+    const relVolThreshold = config.general.relative_volume_threshold !== undefined ? config.general.relative_volume_threshold : 1.3;
+    const adxThreshold = config.general.adx_threshold !== undefined ? config.general.adx_threshold : 22.0;
+
     if (!config.general.is_trading_active) return;
 
     const timestamp = new Date().toISOString();
@@ -1162,9 +1171,9 @@ class TradingEngine {
     // C5: Relative Volume Confirmation (Real ratio computed from volume average)
     conditions.push({
       name: "Relative Volume Confirmation",
-      met: relVolume > 1.3,
+      met: relVolume > relVolThreshold,
       current_value: `${relVolume.toFixed(2)}x`,
-      required: "> 1.3x above 20-period MA",
+      required: `> ${relVolThreshold}x above 20-period MA`,
     });
 
     // C6: News event protection lock
@@ -1190,9 +1199,9 @@ class TradingEngine {
     // C8: ADX Trend Strength Filter (Real ADX computed from market candles)
     conditions.push({
       name: "ADX Trend Strength Filter",
-      met: adxValue > 22,
+      met: adxValue > adxThreshold,
       current_value: `${adxValue.toFixed(1)}`,
-      required: "ADX(14) > 22",
+      required: `ADX(14) > ${adxThreshold}`,
     });
 
     // C9: Minimum Account Equity Check
@@ -1241,8 +1250,8 @@ class TradingEngine {
       if (regimeAligned || this.isGateSkipped(config, "Market Regime Filter")) entryScore += 15;
       if (trendAligned || this.isGateSkipped(config, "Trend Alignment (EMA 21/50)")) entryScore += 15;
       if (sentAligned || this.isGateSkipped(config, "Sentiment Engine Alignment")) entryScore += 15;
-      if (relVolume > 1.3 || this.isGateSkipped(config, "Relative Volume Confirmation")) entryScore += 10;
-      if (adxValue > 22 || this.isGateSkipped(config, "ADX Trend Strength Filter")) entryScore += 10;
+      if (relVolume > relVolThreshold || this.isGateSkipped(config, "Relative Volume Confirmation")) entryScore += 10;
+      if (adxValue > adxThreshold || this.isGateSkipped(config, "ADX Trend Strength Filter")) entryScore += 10;
     }
 
     const allConditionsMet = conditions.every((c) => c.met);

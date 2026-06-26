@@ -483,6 +483,35 @@ export default function ConfigPage({
                 />
                 <p className="text-[10px] text-slate-400">Peak permitted unrealized drawdown within any single open position before emergency closure.</p>
               </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-400 uppercase">Relative Volume Threshold (x)</label>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0.1"
+                  value={generalConfig.relative_volume_threshold !== undefined ? generalConfig.relative_volume_threshold : 1.3}
+                  onChange={(e) => setGeneralConfig({ ...generalConfig, relative_volume_threshold: parseFloat(e.target.value) || 1.3 })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 outline-none font-mono"
+                  id="config-relative-volume-threshold"
+                />
+                <p className="text-[10px] text-slate-400">Required volume multiplier above the 20-period moving average to validate breakthrough (Recommended: 1.3).</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-400 uppercase">ADX Trend Strength Threshold</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0.0"
+                  max="100.0"
+                  value={generalConfig.adx_threshold !== undefined ? generalConfig.adx_threshold : 22.0}
+                  onChange={(e) => setGeneralConfig({ ...generalConfig, adx_threshold: parseFloat(e.target.value) || 22.0 })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 outline-none font-mono"
+                  id="config-adx-threshold"
+                />
+                <p className="text-[10px] text-slate-400">Required ADX(14) value to confirm establishing a strong directional trend (Recommended: 22.0).</p>
+              </div>
             </div>
 
             <div className="border-t border-slate-200 pt-5 space-y-4">

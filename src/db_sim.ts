@@ -44,6 +44,8 @@ const DEFAULT_CONFIG: StrategyConfig = {
     max_trades_per_day: 8,
     is_paper_trading: true,
     skipped_gates: [],
+    relative_volume_threshold: 1.3,
+    adx_threshold: 22.0,
   },
   ml_settings: {
     entry_threshold_long: 0.80,
@@ -711,6 +713,14 @@ class DatabaseManager {
     if (this.cache?.config?.general) {
       if (!this.cache.config.general.skipped_gates) {
         this.cache.config.general.skipped_gates = [];
+        changed = true;
+      }
+      if (this.cache.config.general.relative_volume_threshold === undefined) {
+        this.cache.config.general.relative_volume_threshold = 1.3;
+        changed = true;
+      }
+      if (this.cache.config.general.adx_threshold === undefined) {
+        this.cache.config.general.adx_threshold = 22.0;
         changed = true;
       }
     }

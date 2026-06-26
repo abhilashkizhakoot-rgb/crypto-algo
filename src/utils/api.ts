@@ -2,6 +2,14 @@
  * Helper to determine the API Base URL in sandboxed / iframe environments
  */
 export function getApiBaseUrl(): string {
+  // 0. Use the compile-time injected APP_URL if available
+  try {
+    const injectedUrl = process.env.APP_URL;
+    if (injectedUrl && injectedUrl.startsWith("http")) {
+      return injectedUrl;
+    }
+  } catch (e) {}
+
   // 1. Try to parse import.meta.url first (most reliable for ES modules in sandboxed/iframe environments)
   if (typeof import.meta !== "undefined" && import.meta.url) {
     try {
