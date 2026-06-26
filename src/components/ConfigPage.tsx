@@ -384,10 +384,10 @@ export default function ConfigPage({
                   type="number"
                   step="0.1"
                   value={riskConfig.take_profit_ratio}
-                  onChange={(e) => setRiskConfig({ ...riskConfig, take_profit_ratio: parseFloat(e.target.value) || 2.0 })}
+                  onChange={(e) => setRiskConfig({ ...riskConfig, take_profit_ratio: parseFloat(e.target.value) || 3.5 })}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 outline-none font-mono"
                 />
-                <p className="text-[10px] text-slate-400">Risk-to-reward fraction: TakeProfit distance / StopLoss distance (Default: 2.0x)</p>
+                <p className="text-[10px] text-slate-400">Risk-to-reward fraction: TakeProfit distance / StopLoss distance (Recommended: 3.5x to offset the 0.12% round-trip exchange fees and ensure net wins exceed net losses).</p>
               </div>
 
               <div className="space-y-1.5">
@@ -447,6 +447,72 @@ export default function ConfigPage({
                   id="config-default-quantity-btc"
                 />
                 <p className="text-[10px] text-slate-400">Position size for auto-signals and default for manual entries (e.g. 0.001 BTC)</p>
+              </div>
+
+              <div className="space-y-4 border border-dashed border-indigo-100 rounded-xl p-4 bg-indigo-50/10 md:col-span-2">
+                <div className="flex items-center gap-2 pb-2 border-b border-indigo-50">
+                  <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider font-sans">Delta Exchange India Fee Settings</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2.5 cursor-pointer font-sans select-none">
+                      <input
+                        type="checkbox"
+                        checked={riskConfig.simulate_paper_fees !== false}
+                        onChange={(e) => setRiskConfig({ ...riskConfig, simulate_paper_fees: e.target.checked })}
+                        className="rounded border-slate-300 bg-white text-indigo-600 focus:ring-indigo-400 h-4 w-4"
+                      />
+                      <span className="text-xs font-semibold text-slate-700">Simulate Trading Fees</span>
+                    </label>
+                    <p className="text-[10px] text-slate-500 leading-relaxed pl-6.5">
+                      When enabled, paper trading replicates realistic transaction commissions on entry and exit.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-mono text-slate-500 uppercase">Default Order Execution</label>
+                    <select
+                      value={riskConfig.default_order_execution || "TAKER"}
+                      onChange={(e) => setRiskConfig({ ...riskConfig, default_order_execution: e.target.value as "MAKER" | "TAKER" })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 outline-none font-mono"
+                    >
+                      <option value="TAKER">Taker (0.05% Commission)</option>
+                      <option value="MAKER">Maker (0.02% Commission)</option>
+                    </select>
+                    <p className="text-[10px] text-slate-400">Maker rates reward liquidity provision; Taker rates apply for immediate execution.</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2.5 cursor-pointer font-sans select-none">
+                      <input
+                        type="checkbox"
+                        checked={riskConfig.delta_india_gst_enabled !== false}
+                        onChange={(e) => setRiskConfig({ ...riskConfig, delta_india_gst_enabled: e.target.checked })}
+                        className="rounded border-slate-300 bg-white text-indigo-600 focus:ring-indigo-400 h-4 w-4"
+                      />
+                      <span className="text-xs font-semibold text-slate-700">Apply 18% Mandatory GST</span>
+                    </label>
+                    <p className="text-[10px] text-slate-500 leading-relaxed pl-6.5">
+                      Delta Exchange India enforces an 18% GST on all brokerage and transaction fees.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2.5 cursor-pointer font-sans select-none">
+                      <input
+                        type="checkbox"
+                        checked={riskConfig.delta_scalper_offer_enabled !== false}
+                        onChange={(e) => setRiskConfig({ ...riskConfig, delta_scalper_offer_enabled: e.target.checked })}
+                        className="rounded border-slate-300 bg-white text-indigo-600 focus:ring-indigo-400 h-4 w-4"
+                      />
+                      <span className="text-xs font-semibold text-emerald-700 font-bold">Activate Scalper Offer (FREE CloseLeg)</span>
+                    </label>
+                    <p className="text-[10px] text-slate-500 leading-relaxed pl-6.5">
+                      Waive closing/exit fees entirely on BTCUSD &amp; ETHUSD positions closed within 30 minutes!
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-1.5">

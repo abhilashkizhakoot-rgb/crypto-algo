@@ -196,6 +196,10 @@ export interface StrategyConfig {
     intra_trade_drawdown_limit_pct: number; // e.g. 1.5
     leverage: number; // leverage setting (e.g. 10x, 20x, 50x)
     default_quantity_btc: number; // default trading size (e.g. 0.001)
+    simulate_paper_fees?: boolean; // Whether to simulate exchange fees in paper mode
+    delta_india_gst_enabled?: boolean; // Whether to apply 18% GST to trading fees
+    delta_scalper_offer_enabled?: boolean; // Pay zero closing fee if trade is closed within 30 minutes
+    default_order_execution?: "MAKER" | "TAKER"; // Default order execution type
   };
 }
 

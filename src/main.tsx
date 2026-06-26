@@ -10,22 +10,56 @@ if (originalFetch) {
   try {
     const patchedFetch = function (input: RequestInfo | URL, init?: RequestInit) {
       let resolvedInput = input;
-      if (typeof input === "string" && input.startsWith("/")) {
-        const baseUrl = getApiBaseUrl();
-        if (baseUrl) {
-          resolvedInput = baseUrl + input;
+      if (typeof input === "string") {
+        if (input.startsWith("/")) {
+          const baseUrl = getApiBaseUrl();
+          if (baseUrl) {
+            resolvedInput = baseUrl + input;
+          }
+        } else {
+          try {
+            const urlObj = new URL(input);
+            if (urlObj.protocol === "about:" || urlObj.origin === "null") {
+              const baseUrl = getApiBaseUrl();
+              if (baseUrl && baseUrl.startsWith("http")) {
+                resolvedInput = new URL(urlObj.pathname + urlObj.search, baseUrl).href;
+              }
+            }
+          } catch (e) {
+            if (input.startsWith("null/")) {
+              const baseUrl = getApiBaseUrl();
+              if (baseUrl) {
+                resolvedInput = baseUrl + input.substring(4);
+              }
+            }
+          }
         }
       } else if (input instanceof URL && input.pathname.startsWith("/")) {
         const baseUrl = getApiBaseUrl();
-        if (baseUrl && (input.protocol === "about:" || input.origin === "null")) {
-          resolvedInput = new URL(input.pathname + input.search, baseUrl).href;
+        if (baseUrl && baseUrl.startsWith("http") && (input.protocol === "about:" || input.origin === "null")) {
+          try {
+            resolvedInput = new URL(input.pathname + input.search, baseUrl).href;
+          } catch (e) {}
         }
       } else if (input instanceof Request) {
         const requestUrl = input.url;
-        if (requestUrl.startsWith("/")) {
-          const baseUrl = getApiBaseUrl();
-          if (baseUrl) {
-            resolvedInput = new Request(baseUrl + requestUrl, input);
+        try {
+          const urlObj = new URL(requestUrl);
+          if (urlObj.pathname.startsWith("/") && (urlObj.protocol === "about:" || urlObj.origin === "null" || urlObj.host === "null")) {
+            const baseUrl = getApiBaseUrl();
+            if (baseUrl && baseUrl.startsWith("http")) {
+              const newUrl = new URL(urlObj.pathname + urlObj.search, baseUrl).href;
+              resolvedInput = new Request(newUrl, input);
+            }
+          }
+        } catch (e) {
+          if (requestUrl.startsWith("/")) {
+            const baseUrl = getApiBaseUrl();
+            if (baseUrl && baseUrl.startsWith("http")) {
+              try {
+                resolvedInput = new Request(baseUrl + requestUrl, input);
+              } catch (err) {}
+            }
           }
         }
       }
@@ -53,18 +87,41 @@ if (OriginalEventSource) {
     class PatchedEventSource extends OriginalEventSource {
       constructor(url: string | URL, eventSourceInitDict?: EventSourceInit) {
         let resolvedUrl = url;
-        if (typeof url === "string" && url.startsWith("/")) {
-          const baseUrl = getApiBaseUrl();
-          if (baseUrl) {
-            resolvedUrl = baseUrl + url;
+        if (typeof url === "string") {
+          if (url.startsWith("/")) {
+            const baseUrl = getApiBaseUrl();
+            if (baseUrl && baseUrl.startsWith("http")) {
+              resolvedUrl = baseUrl + url;
+            }
+          } else {
+            try {
+              const urlObj = new URL(url);
+              if (urlObj.protocol === "about:" || urlObj.origin === "null") {
+                const baseUrl = getApiBaseUrl();
+                if (baseUrl && baseUrl.startsWith("http")) {
+                  resolvedUrl = new URL(urlObj.pathname + urlObj.search, baseUrl).href;
+                }
+              }
+            } catch (e) {
+              if (url.startsWith("null/")) {
+                const baseUrl = getApiBaseUrl();
+                if (baseUrl && baseUrl.startsWith("http")) {
+                  resolvedUrl = baseUrl + url.substring(4);
+                }
+              }
+            }
           }
         } else if (url instanceof URL && url.pathname.startsWith("/")) {
           const baseUrl = getApiBaseUrl();
-          if (baseUrl && (url.protocol === "about:" || url.origin === "null")) {
-            resolvedUrl = new URL(url.pathname + url.search, baseUrl);
+          if (baseUrl && baseUrl.startsWith("http") && (url.protocol === "about:" || url.origin === "null")) {
+            try {
+              resolvedUrl = new URL(url.pathname + url.search, baseUrl).href;
+            } catch (e) {}
           }
         }
-        super(resolvedUrl, eventSourceInitDict);
+        
+        const finalUrl = resolvedUrl instanceof URL ? resolvedUrl.href : String(resolvedUrl);
+        super(finalUrl, eventSourceInitDict);
       }
     }
 

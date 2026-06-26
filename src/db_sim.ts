@@ -91,7 +91,7 @@ const DEFAULT_CONFIG: StrategyConfig = {
     risk_per_trade_pct: 0.5,
     max_risk_per_trade_pct: 1.0,
     stop_loss_atr_multiplier: 1.3,
-    take_profit_ratio: 2.0,
+    take_profit_ratio: 3.5,
     max_consecutive_losses: 3,
     consecutive_losses_cooldown_minutes: 30,
     daily_loss_limit_pct: 2.0,
@@ -99,6 +99,10 @@ const DEFAULT_CONFIG: StrategyConfig = {
     intra_trade_drawdown_limit_pct: 1.5,
     leverage: 20,
     default_quantity_btc: 0.001,
+    simulate_paper_fees: true,
+    delta_india_gst_enabled: true,
+    delta_scalper_offer_enabled: true,
+    default_order_execution: "TAKER",
   },
 };
 
@@ -490,6 +494,14 @@ class DatabaseManager {
       if (fs.existsSync(DB_FILE_PATH)) {
         const fileContent = fs.readFileSync(DB_FILE_PATH, "utf-8");
         this.cache = JSON.parse(fileContent);
+        
+        // Migrate legacy/default 2.0 Take Profit ratio to 3.5 to offset round-trip exchange fees
+        if (this.cache && this.cache.config && this.cache.config.risk_management) {
+          if (!this.cache.config.risk_management.take_profit_ratio || this.cache.config.risk_management.take_profit_ratio <= 2.0) {
+            this.cache.config.risk_management.take_profit_ratio = 3.5;
+            this.save();
+          }
+        }
       } else {
         const mockData = generateMockHistory();
         this.cache = mockData;
@@ -731,6 +743,22 @@ class DatabaseManager {
       }
       if (this.cache.config.risk_management.consecutive_losses_cooldown_minutes === undefined) {
         this.cache.config.risk_management.consecutive_losses_cooldown_minutes = 30;
+        changed = true;
+      }
+      if (this.cache.config.risk_management.simulate_paper_fees === undefined) {
+        this.cache.config.risk_management.simulate_paper_fees = true;
+        changed = true;
+      }
+      if (this.cache.config.risk_management.delta_india_gst_enabled === undefined) {
+        this.cache.config.risk_management.delta_india_gst_enabled = true;
+        changed = true;
+      }
+      if (this.cache.config.risk_management.delta_scalper_offer_enabled === undefined) {
+        this.cache.config.risk_management.delta_scalper_offer_enabled = true;
+        changed = true;
+      }
+      if (this.cache.config.risk_management.default_order_execution === undefined) {
+        this.cache.config.risk_management.default_order_execution = "TAKER";
         changed = true;
       }
     }

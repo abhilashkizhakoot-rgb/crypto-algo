@@ -113,7 +113,27 @@ export default function ManualTradingPage({ status, config, onRefresh }: ManualT
   const quantity = parseFloat(quantityStr) || 0;
   const positionValue = quantity * currentPrice;
   const marginRequired = positionValue / leverage;
-  const entryFee = positionValue * 0.0006; // 0.06% maker/taker fee
+  
+  const isPaper = !!config?.general?.is_paper_trading;
+  const simulateFees = config?.risk_management?.simulate_paper_fees !== false;
+  
+  const execType = config?.risk_management?.default_order_execution || "TAKER";
+  let baseRate = execType === "MAKER" ? 0.0002 : 0.0005;
+  if (isPaper && !simulateFees) {
+    baseRate = 0;
+  }
+
+  // Base Entry Fee (Before GST)
+  const baseEntryFee = positionValue * baseRate;
+  
+  // Entry Fee with 18% GST (if enabled)
+  const entryFeeGstMultiplier = (config?.risk_management?.delta_india_gst_enabled !== false && baseRate > 0) ? 1.18 : 1.0;
+  const entryFee = baseEntryFee * entryFeeGstMultiplier;
+
+  // Projected Exit Fee (without scalper offer vs with scalper offer)
+  const exitFeeNormal = positionValue * baseRate * entryFeeGstMultiplier;
+  const scalperOfferActive = config?.risk_management?.delta_scalper_offer_enabled !== false;
+  const exitFeeWithScalper = scalperOfferActive ? 0 : exitFeeNormal;
 
   // Stop Loss computation
   let computedSlPrice = 0;
@@ -634,9 +654,31 @@ export default function ManualTradingPage({ status, config, onRefresh }: ManualT
               <span className="font-mono font-bold text-indigo-600">${safeFormatNumber(marginRequired, 2, 2)} USDT</span>
             </div>
 
-            <div className="flex justify-between text-slate-500">
-              <span>Est. Execution Fees:</span>
-              <span className="font-mono text-slate-600">${entryFee.toFixed(3)} USDT</span>
+            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 space-y-2 mt-2">
+              <div className="flex justify-between text-slate-500 text-[11px]">
+                <span>Order Execution Type:</span>
+                <span className="font-semibold text-slate-700">{execType} ({execType === "MAKER" ? "0.02%" : "0.05%"})</span>
+              </div>
+              <div className="flex justify-between text-slate-500 text-[11px]">
+                <span>Opening Leg Fee (with 18% GST):</span>
+                <span className="font-mono text-slate-700">${entryFee.toFixed(4)} USDT</span>
+              </div>
+              {scalperOfferActive ? (
+                <div className="flex justify-between text-emerald-600 text-[11px] font-medium bg-emerald-50/50 px-1.5 py-0.5 rounded">
+                  <span>Closing Leg Fee (Scalper Offer &lt;30m):</span>
+                  <span className="font-mono font-bold">FREE ($0.00)</span>
+                </div>
+              ) : (
+                <div className="flex justify-between text-slate-500 text-[11px]">
+                  <span>Closing Leg Fee (Projected):</span>
+                  <span className="font-mono text-slate-700">${exitFeeNormal.toFixed(4)} USDT</span>
+                </div>
+              )}
+              {config?.risk_management?.delta_india_gst_enabled !== false && baseRate > 0 && (
+                <div className="text-[10px] text-slate-400 text-right">
+                  *Includes 18% GST on Delta India brokerage
+                </div>
+              )}
             </div>
 
             <div className="border-t border-slate-100 pt-3.5 space-y-3">

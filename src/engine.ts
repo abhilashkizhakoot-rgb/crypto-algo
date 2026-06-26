@@ -1336,7 +1336,7 @@ class TradingEngine {
       leverage,
       pnl_usdt: null,
       pnl_pct: null,
-      fees_paid_usdt: Number((currentPrice * positionQtyBtc * 0.0006).toFixed(4)), // entry commission fee
+      fees_paid_usdt: this.calculateTradingFee(currentPrice * positionQtyBtc, true, 0), // entry commission fee
       exit_reason: null,
       catboost_probability: probability,
       regime_at_entry: this.currentRegime,
@@ -1399,6 +1399,46 @@ class TradingEngine {
     }
   }
 
+  // Calculate realistic Delta Exchange India trading fees including 18% GST and Scalper Offer
+  private calculateTradingFee(
+    notionalValue: number,
+    isEntry: boolean,
+    durationSeconds = 0,
+    orderTypeOverride?: "MAKER" | "TAKER"
+  ): number {
+    const config = dbManager.getConfig();
+    const isPaper = dbManager.isPaperMode();
+    const simulateFees = config.risk_management.simulate_paper_fees !== false;
+
+    // If on paper trading and fee simulation is disabled, pay 0 fees
+    if (isPaper && !simulateFees) {
+      return 0;
+    }
+
+    // Determine execution type (MAKER or TAKER)
+    const execType = orderTypeOverride || config.risk_management.default_order_execution || "TAKER";
+    
+    // Base fee rate: Maker is 0.02%, Taker is 0.05%
+    let rate = execType === "MAKER" ? 0.0002 : 0.0005;
+
+    // Scalper Offer: if closing leg, and scalper offer is enabled, and trade duration is <= 30 mins (1800 seconds)
+    if (!isEntry && config.risk_management.delta_scalper_offer_enabled !== false) {
+      if (durationSeconds <= 30 * 60) {
+        // Waive the closing fee completely!
+        rate = 0;
+      }
+    }
+
+    let fee = notionalValue * rate;
+
+    // Apply 18% GST if enabled
+    if (config.risk_management.delta_india_gst_enabled !== false && rate > 0) {
+      fee = fee * 1.18;
+    }
+
+    return Number(fee.toFixed(4));
+  }
+
   // Real-time tracking of active position PnL and exit checking
   private updateActiveTradePnL() {
     if (!this.activeTrade) return;
@@ -1439,9 +1479,14 @@ class TradingEngine {
       priceReturnPct = ((entryPrice - currentPrice) / entryPrice) * 100;
     }
 
+    const durationSec = Math.floor(
+      (Date.now() - new Date(this.activeTrade.entry_timestamp).getTime()) / 1000
+    );
+    this.activeTrade.hold_duration_seconds = durationSec;
+
     // Include entry commission and exit commission projection
-    const entryFee = entryPrice * qty * 0.0006;
-    const exitFeeProj = currentPrice * qty * 0.0006;
+    const entryFee = this.calculateTradingFee(entryPrice * qty, true, 0);
+    const exitFeeProj = this.calculateTradingFee(currentPrice * qty, false, durationSec);
     const currentPnL = Number((rawPnL - (entryFee + exitFeeProj)).toFixed(2));
     const currentPnLPct = Number(((currentPnL / dbManager.getCredentials().account_balance_usdt) * 100).toFixed(4));
 
@@ -1457,11 +1502,6 @@ class TradingEngine {
     if (adversePct > this.activeTrade.max_adverse_excursion) {
       this.activeTrade.max_adverse_excursion = Number(adversePct.toFixed(4));
     }
-
-    const durationSec = Math.floor(
-      (Date.now() - new Date(this.activeTrade.entry_timestamp).getTime()) / 1000
-    );
-    this.activeTrade.hold_duration_seconds = durationSec;
 
     // Check exit conditions
     let shouldExit = false;
@@ -1513,6 +1553,10 @@ class TradingEngine {
 
     const isWin = (trade.pnl_usdt || 0) > 0;
 
+    const entryFee = this.calculateTradingFee(trade.entry_price * trade.quantity_btc, true, 0);
+    const exitFee = this.calculateTradingFee(currentPrice * trade.quantity_btc, false, trade.hold_duration_seconds);
+    const totalFeesPaid = Number((entryFee + exitFee).toFixed(4));
+
     // Update trade fields
     const updated = dbManager.updateTrade(trade.id, {
       exit_timestamp: new Date().toISOString(),
@@ -1522,6 +1566,7 @@ class TradingEngine {
       exit_reason: reason,
       is_win: isWin,
       hold_duration_seconds: trade.hold_duration_seconds,
+      fees_paid_usdt: totalFeesPaid,
     });
 
     // Update account balance in DB credentials
@@ -1592,13 +1637,14 @@ class TradingEngine {
     this.log(`Manual Trade execution request: ${direction} Qty=${quantityBtc} BTC, Leverage=${leverage}x`);
 
     // Add trade to database
-    const feesPaid = Number((currentPrice * quantityBtc * 0.0006).toFixed(4));
-    
+    const config = dbManager.getConfig();
     // Convert string inputs to proper types if necessary
     const q = Number(quantityBtc);
     const lev = Number(leverage);
     const sl = stopLossPrice ? Number(stopLossPrice) : null;
     const tp = takeProfitPrice ? Number(takeProfitPrice) : null;
+
+    const feesPaid = this.calculateTradingFee(currentPrice * q, true, 0);
 
     const newTrade = dbManager.addTrade({
       entry_timestamp: new Date().toISOString(),

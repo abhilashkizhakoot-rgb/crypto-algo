@@ -2,77 +2,99 @@
  * Helper to determine the API Base URL in sandboxed / iframe environments
  */
 export function getApiBaseUrl(): string {
-  // 0. Use the compile-time injected APP_URL if available
-  try {
-    const injectedUrl = process.env.APP_URL;
-    if (injectedUrl && injectedUrl.startsWith("http")) {
-      return injectedUrl;
+  // 1. Direct window.location protocol and host check
+  // Even if window.location.origin is "null" in a sandboxed iframe,
+  // window.location.protocol and window.location.host retain their original values.
+  if (typeof window !== "undefined" && window.location) {
+    const protocol = window.location.protocol;
+    const host = window.location.host;
+    if ((protocol === "http:" || protocol === "https:") && host && host !== "null") {
+      return `${protocol}//${host}`;
     }
-  } catch (e) {}
+  }
 
-  // 1. Try to parse import.meta.url first (most reliable for ES modules in sandboxed/iframe environments)
-  if (typeof import.meta !== "undefined" && import.meta.url) {
+  // Fallback helper to extract origin from full URLs
+  const extractOrigin = (str: string): string | null => {
+    if (!str) return null;
     try {
-      const origin = new URL(import.meta.url).origin;
-      if (origin && origin.startsWith("http") && origin !== "null") {
+      const match = str.match(/(https?:\/\/[a-zA-Z0-9.-]+(?::\d+)?)/);
+      if (match) {
+        const origin = match[1];
+        const lower = origin.toLowerCase();
+        // Filter out parent frames and standard public CDNs/APIs
+        if (
+          lower.includes("ai.studio") ||
+          lower.includes("google.com") ||
+          lower.includes("unpkg.com") ||
+          lower.includes("cdnjs.cloudflare.com") ||
+          lower.includes("jsdelivr.net") ||
+          lower.includes("googleapis.com") ||
+          lower.includes("google-analytics.com") ||
+          lower.includes("github.com")
+        ) {
+          return null;
+        }
         return origin;
+      }
+    } catch (e) {}
+    return null;
+  };
+
+  // 2. Check document.baseURI
+  if (typeof document !== "undefined" && document.baseURI) {
+    const origin = extractOrigin(document.baseURI);
+    if (origin) return origin;
+  }
+
+  // 3. Check import.meta.url (reliable for ES modules, even if compiled as blob URLs in sandboxed/iframe environments)
+  if (typeof import.meta !== "undefined" && import.meta.url) {
+    const origin = extractOrigin(import.meta.url);
+    if (origin) return origin;
+  }
+
+  // 3b. Check performance resource timing entries (very robust under sandboxed iframes)
+  if (typeof performance !== "undefined" && typeof performance.getEntriesByType === "function") {
+    try {
+      const resources = performance.getEntriesByType("resource");
+      for (let i = 0; i < resources.length; i++) {
+        const name = resources[i].name;
+        if (name) {
+          const origin = extractOrigin(name);
+          if (origin) return origin;
+        }
       }
     } catch (e) {}
   }
 
-  // 2. Try to parse window.location.href if protocol is http/https
-  if (typeof window !== "undefined" && window.location) {
-    const href = window.location.href;
-    if (href && href.startsWith("http")) {
-      try {
-        const origin = new URL(href).origin;
-        if (origin && origin !== "null") {
-          return origin;
-        }
-      } catch (e) {}
-    }
-  }
-
-  // Fallback to checking document script tags
+  // 4. Check document script/link tags
   if (typeof document !== "undefined") {
-    // Check currentScript
     if (document.currentScript && (document.currentScript as HTMLScriptElement).src) {
-      const src = (document.currentScript as HTMLScriptElement).src;
-      if (src && src.startsWith("http")) {
-        try {
-          const origin = new URL(src).origin;
-          if (origin && origin !== "null") return origin;
-        } catch (e) {}
-      }
+      const origin = extractOrigin((document.currentScript as HTMLScriptElement).src);
+      if (origin) return origin;
     }
 
-    // Traverse all script tags
     const scripts = document.getElementsByTagName("script");
     for (let i = 0; i < scripts.length; i++) {
-      const src = scripts[i].src;
-      if (src && src.startsWith("http")) {
-        try {
-          const origin = new URL(src).origin;
-          if (origin && origin !== "null") return origin;
-        } catch (e) {}
-      }
+      const origin = extractOrigin(scripts[i].src);
+      if (origin) return origin;
     }
 
-    // Traverse all link tags
     const links = document.getElementsByTagName("link");
     for (let i = 0; i < links.length; i++) {
-      const href = links[i].href;
-      if (href && href.startsWith("http")) {
-        try {
-          const origin = new URL(href).origin;
-          if (origin && origin !== "null") return origin;
-        } catch (e) {}
-      }
+      const origin = extractOrigin(links[i].href);
+      if (origin) return origin;
     }
   }
 
-  // If we still didn't find any, use window.location.origin only if it is not "null"
-  if (typeof window !== "undefined" && window.location && window.location.origin && window.location.origin !== "null") {
+  // 5. Try the compile-time injected APP_URL if available
+  try {
+    const injectedUrl = process.env.APP_URL;
+    const origin = extractOrigin(injectedUrl || "");
+    if (origin) return origin;
+  } catch (e) {}
+
+  // 6. Direct fallback to window.location.origin
+  if (typeof window !== "undefined" && window.location && window.location.origin && window.location.origin !== "null" && window.location.origin !== "about:") {
     return window.location.origin;
   }
 
