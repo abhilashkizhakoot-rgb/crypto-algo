@@ -6,6 +6,7 @@
 import express from "express";
 import path from "path";
 import crypto from "crypto";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { dbManager } from "./src/db_sim.js";
 import { tradingEngine } from "./src/engine.js";
@@ -468,9 +469,26 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
+    // Serve static files but disable serving index.html by default
+    app.use(express.static(distPath, { index: false }));
+    
     app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      const indexPath = path.join(distPath, "index.html");
+      try {
+        if (fs.existsSync(indexPath)) {
+          let html = fs.readFileSync(indexPath, "utf8");
+          // Inject dynamic API Base URL
+          const baseUrl = process.env.APP_URL || "";
+          const injection = `<script>window.__API_BASE_URL__ = ${JSON.stringify(baseUrl)};</script>`;
+          html = html.replace("<head>", `<head>${injection}`);
+          res.send(html);
+        } else {
+          res.status(404).send("Not Found");
+        }
+      } catch (err) {
+        console.error("Error serving index.html:", err);
+        res.status(500).send("Internal Server Error");
+      }
     });
   }
 

@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
+import { apiFetch } from "../utils/api.ts";
 import { motion, AnimatePresence } from "motion/react";
 import {
   TrendingUp,
@@ -199,7 +200,7 @@ export default function ManualTradingPage({ status, config, onRefresh }: ManualT
         take_profit_price: useTp ? computedTpPrice : null,
       };
 
-      const response = await fetch("/api/trading/manual-entry", {
+      const response = await apiFetch("/api/trading/manual-entry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -225,7 +226,7 @@ export default function ManualTradingPage({ status, config, onRefresh }: ManualT
     if (!confirm("Are you sure you want to execute an emergency market close for this position?")) return;
 
     try {
-      const res = await fetch("/api/trading/force-exit", { method: "POST" });
+      const res = await apiFetch("/api/trading/force-exit", { method: "POST" });
       const data = await res.json();
       if (res.ok && data.executed) {
         setSuccessMsg("Position closed at market price successfully.");

@@ -4,6 +4,7 @@
  */
 
 import React, { useEffect, useState } from "react";
+import { apiFetch } from "../utils/api.ts";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Play,
@@ -173,11 +174,11 @@ export default function Dashboard({
   const handleToggleTrading = async () => {
     if (isTradingActive) {
       setIsStopping(true);
-      await fetch("/api/trading/stop", { method: "POST" });
+      await apiFetch("/api/trading/stop", { method: "POST" });
       setIsStopping(false);
     } else {
       setIsStarting(true);
-      await fetch("/api/trading/start", { method: "POST" });
+      await apiFetch("/api/trading/start", { method: "POST" });
       setIsStarting(false);
     }
     onRefresh();
@@ -186,7 +187,7 @@ export default function Dashboard({
   const handleForceExit = async () => {
     if (!activeTrade) return;
     setIsExiting(true);
-    await fetch("/api/trading/force-exit", { method: "POST" });
+    await apiFetch("/api/trading/force-exit", { method: "POST" });
     setIsExiting(false);
     onRefresh();
   };
@@ -201,7 +202,7 @@ export default function Dashboard({
     let active = true;
     const fetchCandles = async () => {
       try {
-        const res = await fetch("/api/market/candles");
+        const res = await apiFetch("/api/market/candles");
         if (!res.ok) return;
         const data: any[] = await res.json();
         if (!active || !Array.isArray(data) || data.length === 0) return;

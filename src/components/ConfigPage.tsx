@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
+import { apiFetch } from "../utils/api.ts";
 import {
   Settings,
   Cpu,
@@ -66,7 +67,7 @@ export default function ConfigPage({
 
   const handleSaveCategory = async (category: string, data: any) => {
     try {
-      const res = await fetch(`/api/config/${category}`, {
+      const res = await apiFetch(`/api/config/${category}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -82,12 +83,12 @@ export default function ConfigPage({
 
   const handleSaveRiskAndGeneral = async () => {
     try {
-      const resGeneral = await fetch(`/api/config/general`, {
+      const resGeneral = await apiFetch(`/api/config/general`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(generalConfig),
       });
-      const resRisk = await fetch(`/api/config/risk_management`, {
+      const resRisk = await apiFetch(`/api/config/risk_management`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(riskConfig),
@@ -117,7 +118,7 @@ export default function ConfigPage({
   const handleSaveProfile = async () => {
     if (!newProfileName.trim()) return;
     try {
-      const res = await fetch("/api/config/profiles/save", {
+      const res = await apiFetch("/api/config/profiles/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newProfileName, config }),
@@ -134,7 +135,7 @@ export default function ConfigPage({
 
   const handleLoadProfile = async (name: string) => {
     try {
-      const res = await fetch(`/api/config/profiles/load/${name}`, {
+      const res = await apiFetch(`/api/config/profiles/load/${name}`, {
         method: "POST",
       });
       if (res.ok) {
@@ -154,7 +155,7 @@ export default function ConfigPage({
   const handleDeleteProfile = async (name: string) => {
     if (!confirm(`Are you sure you want to delete profile "${name}"?`)) return;
     try {
-      const res = await fetch(`/api/config/profiles/${name}`, {
+      const res = await apiFetch(`/api/config/profiles/${name}`, {
         method: "DELETE",
       });
       if (res.ok) {
@@ -260,7 +261,7 @@ export default function ConfigPage({
                   type="button"
                   onClick={async () => {
                     try {
-                      const res = await fetch("/api/trading/toggle-paper-mode", {
+                      const res = await apiFetch("/api/trading/toggle-paper-mode", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ is_paper_trading: true }),
@@ -285,7 +286,7 @@ export default function ConfigPage({
                   type="button"
                   onClick={async () => {
                     try {
-                      const res = await fetch("/api/trading/toggle-paper-mode", {
+                      const res = await apiFetch("/api/trading/toggle-paper-mode", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ is_paper_trading: false }),

@@ -24,7 +24,16 @@ import {
   TimingWindow,
 } from "./types.js";
 
-const DB_FILE_PATH = path.join(process.cwd(), "db_store.json");
+const DATA_DIR = process.env.DATA_DIR || process.cwd();
+if (DATA_DIR && !fs.existsSync(DATA_DIR)) {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  } catch (e) {
+    console.error(`Failed to create DATA_DIR ${DATA_DIR}:`, e);
+  }
+}
+const DB_FILE_PATH = path.join(DATA_DIR, "db_store.json");
+const DB_PAPER_FILE_PATH = path.join(DATA_DIR, "db_paper_store.json");
 
 export const DEFAULT_TIMING_WINDOWS: TimingWindow[] = [
   {
@@ -565,7 +574,6 @@ class DatabaseManager {
       this.cache = generateMockHistory();
     }
 
-    const DB_PAPER_FILE_PATH = path.join(process.cwd(), "db_paper_store.json");
     try {
       if (fs.existsSync(DB_PAPER_FILE_PATH)) {
         const fileContent = fs.readFileSync(DB_PAPER_FILE_PATH, "utf-8");
@@ -594,7 +602,6 @@ class DatabaseManager {
   private savePaper() {
     try {
       if (this.paperCache) {
-        const DB_PAPER_FILE_PATH = path.join(process.cwd(), "db_paper_store.json");
         fs.writeFileSync(DB_PAPER_FILE_PATH, JSON.stringify(this.paperCache, null, 2), "utf-8");
       }
     } catch (e) {

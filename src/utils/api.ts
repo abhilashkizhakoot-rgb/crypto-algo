@@ -2,6 +2,11 @@
  * Helper to determine the API Base URL in sandboxed / iframe environments
  */
 export function getApiBaseUrl(): string {
+  // 0. Use server-injected base URL if present (extremely reliable under iframe sandboxing)
+  if (typeof window !== "undefined" && (window as any).__API_BASE_URL__) {
+    return (window as any).__API_BASE_URL__;
+  }
+
   // Direct helper to extract an origin from a URL string without applying CDN filters.
   // This is safe to use for page level URLs (like window.location.href or document.baseURI),
   // as the page itself can never be an external CDN.
@@ -138,3 +143,25 @@ export function getApiBaseUrl(): string {
 
   return "";
 }
+
+/**
+ * Drop-in wrapper for standard fetch that automatically prepends
+ * the correct API Base URL if the path starts with /api/
+ */
+export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const baseUrl = getApiBaseUrl();
+  let finalInput = input;
+  
+  if (typeof input === "string" && input.startsWith("/api/")) {
+    finalInput = baseUrl ? `${baseUrl}${input}` : input;
+  } else if (input instanceof URL && input.pathname.startsWith("/api/")) {
+    // If it's a URL object, we can construct a new one with the correct base if needed
+    if (baseUrl && (input.origin === window.location.origin || input.origin === "null")) {
+      const updatedUrl = new URL(input.pathname + input.search + input.hash, baseUrl);
+      finalInput = updatedUrl;
+    }
+  }
+  
+  return fetch(finalInput, init);
+}
+

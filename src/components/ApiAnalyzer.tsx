@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { apiFetch } from "../utils/api.ts";
 import {
   Terminal,
   RefreshCw,
@@ -32,7 +33,7 @@ export default function ApiAnalyzer({ isPaperMode = true }: ApiAnalyzerProps) {
 
   const fetchLogs = async () => {
     try {
-      const res = await fetch("/api/debug/api-logs");
+      const res = await apiFetch("/api/debug/api-logs");
       if (res.ok) {
         const data = await res.json();
         setLogs(data);

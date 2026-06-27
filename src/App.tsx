@@ -31,7 +31,7 @@ import {
   ConnectionStatus,
 } from "./types.js";
 import { safeFormatTime } from "./utils/format";
-import { getApiBaseUrl } from "./utils/api.ts";
+import { getApiBaseUrl, apiFetch } from "./utils/api.ts";
 
 // Import modular components
 import Dashboard from "./components/Dashboard.tsx";
@@ -131,11 +131,11 @@ export default function App() {
   const fetchAllData = async (forceConfig = true) => {
     try {
       // Server Status
-      const statusRes = await fetch("/api/status");
+      const statusRes = await apiFetch("/api/status");
       if (statusRes.ok) setStatus(await statusRes.json());
 
       // Exchange Key
-      const credsRes = await fetch("/api/exchange/credentials");
+      const credsRes = await apiFetch("/api/exchange/credentials");
       if (credsRes.ok) {
         const credsData = await credsRes.json();
         setCredentials(credsData);
@@ -150,41 +150,41 @@ export default function App() {
       }
 
       // Trades, Signals, Headlines, Logs
-      const tradesRes = await fetch("/api/trades");
+      const tradesRes = await apiFetch("/api/trades");
       if (tradesRes.ok) setTrades(await tradesRes.json());
 
-      const signalsRes = await fetch("/api/signals");
+      const signalsRes = await apiFetch("/api/signals");
       if (signalsRes.ok) setSignals(await signalsRes.json());
 
-      const headlinesRes = await fetch("/api/headlines");
+      const headlinesRes = await apiFetch("/api/headlines");
       if (headlinesRes.ok) setHeadlines(await headlinesRes.json());
 
-      const logsRes = await fetch("/api/logs");
+      const logsRes = await apiFetch("/api/logs");
       if (logsRes.ok) setLogs(await logsRes.json());
 
       // Configuration
       if (forceConfig || !config) {
-        const configRes = await fetch("/api/config");
+        const configRes = await apiFetch("/api/config");
         if (configRes.ok) setConfig(await configRes.json());
 
-        const profilesRes = await fetch("/api/config/profiles");
+        const profilesRes = await apiFetch("/api/config/profiles");
         if (profilesRes.ok) setProfiles(await profilesRes.json());
 
-        const configHistoryRes = await fetch("/api/config/history");
+        const configHistoryRes = await apiFetch("/api/config/history");
         if (configHistoryRes.ok) setConfigHistory(await configHistoryRes.json());
       }
 
       // Quantitative Analytics
-      const summaryRes = await fetch("/api/analytics/summary");
+      const summaryRes = await apiFetch("/api/analytics/summary");
       if (summaryRes.ok) setAnalyticsSummary(await summaryRes.json());
 
-      const equityRes = await fetch("/api/analytics/equity-curve");
+      const equityRes = await apiFetch("/api/analytics/equity-curve");
       if (equityRes.ok) setEquityCurve(await equityRes.json());
 
-      const dailyRes = await fetch("/api/analytics/daily-breakdown");
+      const dailyRes = await apiFetch("/api/analytics/daily-breakdown");
       if (dailyRes.ok) setDailyStats(await dailyRes.json());
 
-      const regimeRes = await fetch("/api/analytics/regime-performance");
+      const regimeRes = await apiFetch("/api/analytics/regime-performance");
       if (regimeRes.ok) setRegimeStats(await regimeRes.json());
     } catch (e) {
       console.error("Backend offline. Retrying synchronization loop in background...", e);
@@ -238,7 +238,7 @@ export default function App() {
 
     try {
       // Save credentials first
-      const saveRes = await fetch("/api/exchange/credentials", {
+      const saveRes = await apiFetch("/api/exchange/credentials", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -252,13 +252,13 @@ export default function App() {
 
       if (saveRes.ok) {
         // Trigger connectivity test
-        await fetch("/api/exchange/test-connection", { method: "POST" });
+        await apiFetch("/api/exchange/test-connection", { method: "POST" });
         
         // Poll status every 500ms
         let attempts = 0;
         const interval = setInterval(async () => {
           attempts++;
-          const res = await fetch("/api/exchange/credentials");
+          const res = await apiFetch("/api/exchange/credentials");
           if (res.ok) {
             const data = await res.json();
             setCredentials(data);
@@ -368,7 +368,7 @@ export default function App() {
         <div className="flex items-center bg-slate-100 border border-slate-200 p-1 rounded-xl" id="trading-mode-selector">
           <button
             onClick={async () => {
-              const res = await fetch("/api/trading/toggle-paper-mode", {
+              const res = await apiFetch("/api/trading/toggle-paper-mode", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ is_paper_trading: true }),
@@ -388,7 +388,7 @@ export default function App() {
           </button>
           <button
             onClick={async () => {
-              const res = await fetch("/api/trading/toggle-paper-mode", {
+              const res = await apiFetch("/api/trading/toggle-paper-mode", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ is_paper_trading: false }),
@@ -649,6 +649,7 @@ export default function App() {
                 trades={trades}
                 isPaperMode={status?.is_paper_trading}
                 onRefresh={fetchAllData}
+                config={config}
               />
             )}
 
