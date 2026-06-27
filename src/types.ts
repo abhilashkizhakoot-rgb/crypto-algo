@@ -152,6 +152,15 @@ export interface NewsHeadline {
   matched_keyword: string | null;
 }
 
+export interface TimingWindow {
+  id: string;
+  name: string;
+  start_time: string; // "HH:MM" (IST)
+  end_time: string;   // "HH:MM" (IST)
+  allowed: boolean;
+  description: string;
+}
+
 export interface StrategyConfig {
   general: {
     is_trading_active: boolean;
@@ -161,6 +170,7 @@ export interface StrategyConfig {
     skipped_gates?: string[];
     relative_volume_threshold?: number;
     adx_threshold?: number;
+    timing_windows?: TimingWindow[];
   };
   ml_settings: {
     entry_threshold_long: number; // e.g. 0.80

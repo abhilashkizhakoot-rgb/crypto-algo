@@ -15,6 +15,7 @@ import {
   ArrowLeftRight,
   Sparkles,
   TrendingUp,
+  Clock,
 } from "lucide-react";
 import { StrategyConfig, ConfigHistoryEntry, NewsSource } from "../types.js";
 
@@ -30,6 +31,7 @@ const AVAILABLE_GATES = [
   { id: "equity", label: "Minimum Account Equity Check" },
   { id: "credentials", label: "Exchange API Credentials Validation" },
   { id: "cooldown", label: "Loss Streak Cooldown Protection" },
+  { id: "timing", label: "Optimal Session Timing Window Check (IST)" },
 ];
 
 interface ConfigPageProps {
@@ -577,6 +579,70 @@ export default function ConfigPage({
                   id="config-adx-threshold"
                 />
                 <p className="text-[10px] text-slate-400">Required ADX(14) value to confirm establishing a strong directional trend (Recommended: 22.0).</p>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-200 pt-5 space-y-4">
+              <div>
+                <h4 className="text-xs font-bold font-sans text-slate-700 uppercase flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-indigo-500" />
+                  Scalper Session Timing Windows (IST)
+                </h4>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Configure which India Standard Time (IST) sessions are active (ticked = allowed to trade) and adjust their active start/end hours. Weekends &amp; Dead Liquidity sessions should be unchecked to avoid high slippage and emotional trading fatigue.
+                </p>
+              </div>
+
+              <div className="space-y-3 bg-slate-50 border border-slate-200/60 rounded-xl p-4">
+                {(generalConfig.timing_windows || []).map((win, idx) => (
+                  <div key={win.id || idx} className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-3 bg-white border border-slate-100 rounded-lg hover:shadow-sm transition-all">
+                    <div className="flex items-start gap-3 select-none">
+                      <input
+                        type="checkbox"
+                        checked={win.allowed}
+                        onChange={() => {
+                          const updated = (generalConfig.timing_windows || []).map(w => w.id === win.id ? { ...w, allowed: !w.allowed } : w);
+                          setGeneralConfig({ ...generalConfig, timing_windows: updated });
+                        }}
+                        className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 shrink-0 cursor-pointer"
+                        id={`timing-allow-${win.id}`}
+                      />
+                      <div className="space-y-0.5">
+                        <span className={`text-xs font-semibold ${win.allowed ? "text-slate-800" : "text-slate-500 line-through decoration-slate-300"}`}>
+                          {win.name}
+                        </span>
+                        <p className="text-[10px] text-slate-400 max-w-sm">
+                          {win.description}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+                      <span className="text-[10px] font-mono text-slate-400 uppercase">IST Hours:</span>
+                      <input
+                        type="time"
+                        value={win.start_time}
+                        onChange={(e) => {
+                          const updated = (generalConfig.timing_windows || []).map(w => w.id === win.id ? { ...w, start_time: e.target.value } : w);
+                          setGeneralConfig({ ...generalConfig, timing_windows: updated });
+                        }}
+                        className="bg-slate-50 hover:bg-slate-100/50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-700 font-mono focus:ring-1 focus:ring-indigo-400 outline-none transition-all"
+                        disabled={win.id === "weekends"}
+                      />
+                      <span className="text-slate-400 text-xs">—</span>
+                      <input
+                        type="time"
+                        value={win.end_time}
+                        onChange={(e) => {
+                          const updated = (generalConfig.timing_windows || []).map(w => w.id === win.id ? { ...w, end_time: e.target.value } : w);
+                          setGeneralConfig({ ...generalConfig, timing_windows: updated });
+                        }}
+                        className="bg-slate-50 hover:bg-slate-100/50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-700 font-mono focus:ring-1 focus:ring-indigo-400 outline-none transition-all"
+                        disabled={win.id === "weekends"}
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 

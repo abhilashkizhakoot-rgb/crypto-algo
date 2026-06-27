@@ -21,9 +21,61 @@ import {
   NewsSource,
   DailyStats,
   ApiCallLog,
+  TimingWindow,
 } from "./types.js";
 
 const DB_FILE_PATH = path.join(process.cwd(), "db_store.json");
+
+export const DEFAULT_TIMING_WINDOWS: TimingWindow[] = [
+  {
+    id: "asia_open",
+    name: "Asia Open Front-run",
+    start_time: "05:00",
+    end_time: "09:30",
+    allowed: true,
+    description: "Optimal morning momentum. High probability trend capture session.",
+  },
+  {
+    id: "intraday_chop",
+    name: "Intra-day Chop",
+    start_time: "09:30",
+    end_time: "18:30",
+    allowed: false,
+    description: "Avoid period. High noise, low momentum, and sideways chop.",
+  },
+  {
+    id: "europe_us_overlap",
+    name: "US / Europe Overlap",
+    start_time: "18:30",
+    end_time: "22:30",
+    allowed: true,
+    description: "Best Window. Peak liquidity, volume, and lowest spreads with high institutional action.",
+  },
+  {
+    id: "late_us_session",
+    name: "Late US Session",
+    start_time: "22:30",
+    end_time: "01:30",
+    allowed: true,
+    description: "Active derivatives positioning. Ideal session for momentum breakouts.",
+  },
+  {
+    id: "dead_liquidity",
+    name: "Dead Liquidity",
+    start_time: "01:30",
+    end_time: "05:00",
+    allowed: false,
+    description: "Strict Avoid period. Extremely thin orderbooks and high slippage risk.",
+  },
+  {
+    id: "weekends",
+    name: "Weekends",
+    start_time: "00:00",
+    end_time: "23:59",
+    allowed: false,
+    description: "Volume drops significantly on weekends, increasing the risk of sharp liquidations and false trends.",
+  },
+];
 
 interface DatabaseSchema {
   credentials: ExchangeCredentials;
@@ -46,6 +98,7 @@ const DEFAULT_CONFIG: StrategyConfig = {
     skipped_gates: [],
     relative_volume_threshold: 1.3,
     adx_threshold: 22.0,
+    timing_windows: DEFAULT_TIMING_WINDOWS,
   },
   ml_settings: {
     entry_threshold_long: 0.80,
@@ -733,6 +786,10 @@ class DatabaseManager {
       }
       if (this.cache.config.general.adx_threshold === undefined) {
         this.cache.config.general.adx_threshold = 22.0;
+        changed = true;
+      }
+      if (!this.cache.config.general.timing_windows) {
+        this.cache.config.general.timing_windows = DEFAULT_TIMING_WINDOWS;
         changed = true;
       }
     }

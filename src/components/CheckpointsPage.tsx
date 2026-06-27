@@ -146,6 +146,14 @@ export default function CheckpointsPage({ status, onRefresh, onTabChange }: Chec
       description: "Automated timeout that blocks trading after being hit by N consecutive losses to prevent emotional or algorithmic revenge trading.",
       priority: "CRITICAL",
     },
+    {
+      name: "Optimal Session Timing Window Check (IST)",
+      met: true,
+      current_value: "PASSING",
+      required: "Avoid weekends & 2:00 AM - 8:00 AM IST",
+      description: "Checks whether current session is optimal (6:30 PM - 1:30 AM IST) and avoids risky periods (Weekends & 2:00 AM - 8:00 AM IST).",
+      priority: "HIGH",
+    },
   ];
 
   const conditions = checkpointsData?.conditions || fallbackConditions;
@@ -167,7 +175,7 @@ export default function CheckpointsPage({ status, onRefresh, onTabChange }: Chec
             <h1 className="font-sans font-bold text-lg text-slate-800 tracking-tight">Checkpoints Radar Tracker</h1>
           </div>
           <p className="text-xs text-slate-500">
-            Real-time scanner analyzing 10 strict quantitative, qualitative, and technical trade entry gating conditions.
+            Real-time scanner analyzing {conditions.length} strict quantitative, qualitative, and technical trade entry gating conditions.
           </p>
         </div>
 
@@ -210,7 +218,7 @@ export default function CheckpointsPage({ status, onRefresh, onTabChange }: Chec
                 Automated Order Routing Locked • {blockedCount} Blocked Checkpoint{blockedCount > 1 ? "s" : ""}
               </h2>
               <p className="text-xs text-rose-700/90 leading-relaxed">
-                The trade scanner is actively blocking order routing. Automated trades will only execute when all 10 checklists pass concurrently and the Entry Score is &ge; 80.
+                The trade scanner is actively blocking order routing. Automated trades will only execute when all {conditions.length} checklists pass concurrently and the Entry Score is &ge; 80.
               </p>
             </div>
           </div>
@@ -282,7 +290,7 @@ export default function CheckpointsPage({ status, onRefresh, onTabChange }: Chec
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="font-sans font-bold text-xs text-slate-400 uppercase tracking-wider font-mono">
-            Full 10-Checklist Radar Dashboard
+            Full {conditions.length}-Checklist Radar Dashboard
           </h2>
           <span className="text-[10px] font-mono text-slate-400">Updates live per tick</span>
         </div>

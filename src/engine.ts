@@ -64,7 +64,8 @@ class TradingEngine {
         (name.toLowerCase().includes("adx") && g.toLowerCase().includes("adx")) ||
         (name.toLowerCase().includes("equity") && g.toLowerCase().includes("equity")) ||
         (name.toLowerCase().includes("credentials") && g.toLowerCase().includes("credentials")) ||
-        (name.toLowerCase().includes("cooldown") && g.toLowerCase().includes("cooldown"))
+        (name.toLowerCase().includes("cooldown") && g.toLowerCase().includes("cooldown")) ||
+        (name.toLowerCase().includes("timing") && g.toLowerCase().includes("timing"))
     );
   }
 
@@ -189,6 +190,95 @@ class TradingEngine {
       return sum + weight;
     }, 0);
     return totalWeight > 0 ? Number((weightedSum / totalWeight).toFixed(4)) : 0;
+  }
+
+  public getISTTimingStatus(): { met: boolean; status: string; description: string; current_time: string } {
+    const config = dbManager.getConfig();
+    const windows = config.general.timing_windows || [];
+
+    // Convert current Date to IST (UTC + 5:30)
+    const d = new Date();
+    const utcMs = d.getTime() + d.getTimezoneOffset() * 60000;
+    const istOffset = 5.5 * 3600000;
+    const istDate = new Date(utcMs + istOffset);
+
+    const hour = istDate.getHours();
+    const minute = istDate.getMinutes();
+    const day = istDate.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+    const minutesOfDay = hour * 60 + minute;
+
+    const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const dayStr = days[day];
+    const timeStr = `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")} IST`;
+
+    // Helper to parse "HH:MM" to minutes of day
+    const parseTimeToMinutes = (timeStr: string): number => {
+      const parts = timeStr.split(":");
+      if (parts.length !== 2) return 0;
+      const h = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      return (isNaN(h) || isNaN(m)) ? 0 : h * 60 + m;
+    };
+
+    // Helper to check if a time falls in a window
+    const isTimeInWindow = (minutes: number, startStr: string, endStr: string): boolean => {
+      const start = parseTimeToMinutes(startStr);
+      const end = parseTimeToMinutes(endStr);
+      if (start === end) return false;
+      if (start < end) {
+        return minutes >= start && minutes < end;
+      } else {
+        // Crosses midnight (e.g. 22:30 to 01:30)
+        return minutes >= start || minutes < end;
+      }
+    };
+
+    // 1. Weekend Check: Saturday after 1:30 AM IST & all of Sunday IST
+    let isWeekendNow = false;
+    if (day === 0) {
+      isWeekendNow = true;
+    } else if (day === 6) {
+      if (minutesOfDay > 90) {
+        isWeekendNow = true;
+      }
+    }
+
+    const weekendWindow = windows.find((w) => w.id === "weekends");
+    if (isWeekendNow) {
+      const allowed = weekendWindow ? weekendWindow.allowed : false;
+      if (!allowed) {
+        return {
+          met: false,
+          status: "RESTRICTED (Weekend Avoid Window)",
+          description: weekendWindow?.description || "Volume drops significantly on weekends, increasing the risk of sharp liquidations and false trends.",
+          current_time: `${dayStr}, ${timeStr}`
+        };
+      }
+    }
+
+    // 2. Session Match Check
+    const matchingWindow = windows.find(
+      (w) => w.id !== "weekends" && isTimeInWindow(minutesOfDay, w.start_time, w.end_time)
+    );
+
+    if (matchingWindow) {
+      return {
+        met: matchingWindow.allowed,
+        status: matchingWindow.allowed
+          ? `OPTIMAL (${matchingWindow.name}, ${matchingWindow.start_time} - ${matchingWindow.end_time})`
+          : `RESTRICTED (${matchingWindow.name}, ${matchingWindow.start_time} - ${matchingWindow.end_time})`,
+        description: matchingWindow.description,
+        current_time: `${dayStr}, ${timeStr}`
+      };
+    }
+
+    // Fallback if no matching session is defined for this minute
+    return {
+      met: true,
+      status: "PASSING (Normal Hours, Non-Optimal)",
+      description: "Outside designated session times. Proceed with caution.",
+      current_time: `${dayStr}, ${timeStr}`
+    };
   }
 
   public getCurrentCheckpoints() {
@@ -399,6 +489,17 @@ class TradingEngine {
       required: "No active cooldown from consecutive losses",
       description: "Automated timeout that blocks trading after being hit by N consecutive losses to prevent emotional or algorithmic revenge trading.",
       priority: "CRITICAL",
+    });
+
+    // C12: Optimal Session Timing Window Check (IST)
+    const timingStatus = this.getISTTimingStatus();
+    conditions.push({
+      name: "Optimal Session Timing Window Check (IST)",
+      met: timingStatus.met,
+      current_value: timingStatus.status,
+      required: "Avoid weekends & 2:00 AM - 8:00 AM IST",
+      description: timingStatus.description,
+      priority: "HIGH",
     });
 
     // Apply bypassed/skipped gates
@@ -1233,6 +1334,15 @@ class TradingEngine {
         ? `COOLDOWN (Streak: ${lossCooldown.consecutiveLosses}, ${Math.ceil(lossCooldown.remainingSeconds / 60)}m left)`
         : "PASSING",
       required: "No active cooldown from consecutive losses",
+    });
+
+    // C12: Optimal Session Timing Window Check (IST)
+    const timingStatus = this.getISTTimingStatus();
+    conditions.push({
+      name: "Optimal Session Timing Window Check (IST)",
+      met: timingStatus.met,
+      current_value: timingStatus.status,
+      required: "Avoid weekends & 2:00 AM - 8:00 AM IST",
     });
 
     // Apply bypassed/skipped gates
