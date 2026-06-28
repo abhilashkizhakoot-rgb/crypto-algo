@@ -4,7 +4,14 @@
 export function getApiBaseUrl(): string {
   // 0. Use server-injected base URL if present (extremely reliable under iframe sandboxing)
   if (typeof window !== "undefined" && (window as any).__API_BASE_URL__) {
-    return (window as any).__API_BASE_URL__;
+    const injected = (window as any).__API_BASE_URL__;
+    if (injected) {
+      const isClientLocal = window.location && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.hostname === "0.0.0.0");
+      const isInjectedLocal = injected.includes("localhost") || injected.includes("127.0.0.1") || injected.includes("0.0.0.0");
+      if (isClientLocal || !isInjectedLocal) {
+        return injected;
+      }
+    }
   }
 
   // Direct helper to extract an origin from a URL string without applying CDN filters.

@@ -12,8 +12,38 @@ import { dbManager } from "./src/db_sim.js";
 import { tradingEngine } from "./src/engine.js";
 import { ConnectionStatus } from "./src/types.js";
 
+function getRequestBaseUrl(req: express.Request): string {
+  let proto = req.headers["x-forwarded-proto"] || req.protocol || "http";
+  if (Array.isArray(proto)) {
+    proto = proto[0];
+  }
+  let host = req.headers["x-forwarded-host"] || req.headers["host"] || req.get("host") || "";
+  if (Array.isArray(host)) {
+    host = host[0];
+  }
+  
+  // If host is a local address, but process.env.APP_URL is defined, use APP_URL
+  if ((!host || host.includes("localhost") || host.includes("127.0.0.1") || host.includes("0.0.0.0")) && process.env.APP_URL) {
+    try {
+      const urlObj = new URL(process.env.APP_URL);
+      if (urlObj.host && !urlObj.host.includes("localhost")) {
+        host = urlObj.host;
+        proto = urlObj.protocol.replace(":", "");
+      }
+    } catch (e) {}
+  }
+  
+  // Ensure that if we are on Cloud Run (which has K_SERVICE), we default to https if not explicitly http
+  if (process.env.K_SERVICE && proto === "http") {
+    proto = "https";
+  }
+  
+  return host ? `${proto}://${host}` : "";
+}
+
 async function startServer() {
   const app = express();
+  app.set("trust proxy", true);
   const PORT = 3000;
 
   // Body parser
@@ -466,6 +496,34 @@ async function startServer() {
       server: { middlewareMode: true },
       appType: "spa",
     });
+    
+    // Intercept GET requests for HTML pages to inject __API_BASE_URL__ dynamically
+    app.use(async (req, res, next) => {
+      const isHtml = 
+        (req.headers.accept && req.headers.accept.includes("text/html")) ||
+        req.path === "/" ||
+        req.path.endsWith(".html") ||
+        (!req.path.includes(".") && !req.path.startsWith("/api/"));
+
+      if (req.method === "GET" && isHtml && !req.path.startsWith("/api/")) {
+        try {
+          const url = req.originalUrl;
+          let html = fs.readFileSync(path.join(process.cwd(), "index.html"), "utf-8");
+          html = await vite.transformIndexHtml(url, html);
+          
+          // Inject dynamic API Base URL
+          const baseUrl = getRequestBaseUrl(req);
+          const injection = `<script>window.__API_BASE_URL__ = ${JSON.stringify(baseUrl)};</script>`;
+          html = html.replace("<head>", `<head>${injection}`);
+          
+          return res.status(200).set({ "Content-Type": "text/html" }).end(html);
+        } catch (e) {
+          return next(e);
+        }
+      }
+      next();
+    });
+
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
@@ -478,7 +536,7 @@ async function startServer() {
         if (fs.existsSync(indexPath)) {
           let html = fs.readFileSync(indexPath, "utf8");
           // Inject dynamic API Base URL
-          const baseUrl = process.env.APP_URL || "";
+          const baseUrl = getRequestBaseUrl(req);
           const injection = `<script>window.__API_BASE_URL__ = ${JSON.stringify(baseUrl)};</script>`;
           html = html.replace("<head>", `<head>${injection}`);
           res.send(html);

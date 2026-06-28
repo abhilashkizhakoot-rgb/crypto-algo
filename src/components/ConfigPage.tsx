@@ -51,6 +51,44 @@ export default function ConfigPage({
   const [activeTab, setActiveTab] = useState<"general" | "ml" | "sentiment" | "risk" | "profiles" | "history">("risk");
   const [newProfileName, setNewProfileName] = useState("");
   const [keywordInput, setKeywordInput] = useState("");
+  const [isRetraining, setIsRetraining] = useState(false);
+  const [retrainMsg, setRetrainMsg] = useState("");
+
+  const handleRetrainModel = async () => {
+    if (isRetraining) return;
+    setIsRetraining(true);
+    setRetrainMsg("Retraining job initiated on previous data...");
+    try {
+      const res = await apiFetch("/api/ml/retrain", {
+        method: "POST"
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRetrainMsg(`Success: Walk-forward retraining job (${data.job_id}) started in background. Hot-deploying converged model parameters shortly!`);
+        setTimeout(() => {
+          onRefresh();
+          // Read updated config after training completion (which takes ~4 seconds in simulation)
+          apiFetch("/api/config").then(configRes => {
+            if (configRes.ok) {
+              configRes.json().then(latest => {
+                if (latest && latest.ml_settings) {
+                  setMlConfig(latest.ml_settings);
+                }
+              });
+            }
+          });
+          setIsRetraining(false);
+          setRetrainMsg("");
+        }, 5000);
+      } else {
+        setRetrainMsg("Failed to start retraining job. Check backend logs.");
+        setIsRetraining(false);
+      }
+    } catch (e) {
+      setRetrainMsg("Error connecting to retraining service.");
+      setIsRetraining(false);
+    }
+  };
 
   // Sub-tab State Mirroring
   const [generalConfig, setGeneralConfig] = useState(config.general);
@@ -795,7 +833,26 @@ export default function ConfigPage({
               </div>
             </div>
 
-            <div className="border-t border-slate-200 pt-5 flex justify-end">
+            {retrainMsg && (
+              <div className="text-[11px] font-mono text-indigo-600 bg-indigo-50 border border-indigo-100 p-2.5 rounded-lg animate-pulse">
+                {retrainMsg}
+              </div>
+            )}
+
+            <div className="border-t border-slate-200 pt-5 flex justify-between items-center">
+              <button
+                type="button"
+                onClick={handleRetrainModel}
+                disabled={isRetraining}
+                className={`text-xs font-sans font-semibold px-5 py-2.5 rounded-lg transition-colors duration-150 cursor-pointer shadow-sm border ${
+                  isRetraining
+                    ? "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed animate-pulse"
+                    : "bg-white border-purple-200 hover:bg-purple-50 text-purple-700 hover:border-purple-300"
+                }`}
+              >
+                {isRetraining ? "RETRAINING IN PROGRESS..." : "⚡ RETRAIN CATBOOST NOW"}
+              </button>
+
               <button
                 onClick={() => handleSaveCategory("ml_settings", mlConfig)}
                 className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-sans font-semibold px-5 py-2.5 rounded-lg transition-colors duration-150 cursor-pointer shadow-sm"

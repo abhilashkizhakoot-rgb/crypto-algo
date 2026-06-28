@@ -213,7 +213,7 @@ export default function App() {
         }
       };
       eventSource.onerror = (e) => {
-        console.error("SSE stream encountered an error:", e);
+        console.warn("SSE stream closed or encountered a reconnect event:", e);
       };
     } catch (err) {
       console.warn("SSE EventSource not supported or failed to initialize, relying on fallback polling:", err);
