@@ -5,22 +5,27 @@ export function getApiBaseUrl(): string {
   // 0. Use server-injected base URL if present (extremely reliable under iframe sandboxing)
   if (typeof window !== "undefined" && (window as any).__API_BASE_URL__) {
     const injected = (window as any).__API_BASE_URL__;
-    if (injected) {
+    console.debug(`[getApiBaseUrl] Step 0: Injected URL found: "${injected}"`);
+    if (injected && typeof injected === "string" && !injected.includes("null") && injected.trim() !== "") {
       const isClientLocal = window.location && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.hostname === "0.0.0.0");
       const isInjectedLocal = injected.includes("localhost") || injected.includes("127.0.0.1") || injected.includes("0.0.0.0");
       if (isClientLocal || !isInjectedLocal) {
+        console.debug(`[getApiBaseUrl] Step 0: Using injected URL: "${injected}"`);
         return injected;
       }
     }
   }
 
   // Direct helper to extract an origin from a URL string without applying CDN filters.
-  // This is safe to use for page level URLs (like window.location.href or document.baseURI),
-  // as the page itself can never be an external CDN.
   const extractOriginDirect = (str: string): string | null => {
     if (!str) return null;
     try {
-      const match = str.match(/(https?:\/\/[a-zA-Z0-9.-]+(?::\d+)?)/);
+      // Handle blob URLs correctly by extracting the underlying origin
+      let urlToCheck = str;
+      if (str.startsWith("blob:")) {
+        urlToCheck = str.substring(5);
+      }
+      const match = urlToCheck.match(/(https?:\/\/[a-zA-Z0-9.-]+(?::\d+)?)/);
       if (match) {
         return match[1];
       }
@@ -35,7 +40,6 @@ export function getApiBaseUrl(): string {
     const lower = origin.toLowerCase();
     
     // Check for standard CDN and API platforms to filter out.
-    // We make "google.com" check more specific to allow googleusercontent.com (which often hosts preview pages).
     if (
       lower.includes("ai.studio") ||
       lower.includes("apis.google.com") ||
@@ -53,22 +57,25 @@ export function getApiBaseUrl(): string {
   };
 
   // 1. Direct window.location protocol and host check
-  // Even if window.location.origin is "null" in a sandboxed iframe,
-  // window.location.protocol and window.location.host retain their original values.
   if (typeof window !== "undefined" && window.location) {
     try {
       const protocol = window.location.protocol;
       const host = window.location.host;
       if ((protocol === "http:" || protocol === "https:") && host && host !== "null" && host !== "") {
-        return `${protocol}//${host}`;
+        const res = `${protocol}//${host}`;
+        console.debug(`[getApiBaseUrl] Step 1: Resolved to "${res}"`);
+        return res;
       }
     } catch (e) {}
 
-    // 1b. If it is a blob or restricted URL, window.location.href might contain the parent/underlying HTTP origin.
+    // 1b. Check window.location.href
     try {
       if (window.location.href) {
-        const origin = extractOriginDirect(window.location.href);
-        if (origin) return origin;
+        const origin = extractOriginWithFilter(window.location.href);
+        if (origin) {
+          console.debug(`[getApiBaseUrl] Step 1b: window.location.href: "${window.location.href}", extracted: "${origin}"`);
+          return origin;
+        }
       }
     } catch (e) {}
   }
@@ -76,78 +83,142 @@ export function getApiBaseUrl(): string {
   // 2. Check document.baseURI
   if (typeof document !== "undefined" && document.baseURI) {
     try {
-      const origin = extractOriginDirect(document.baseURI);
-      if (origin) return origin;
-    } catch (e) {}
-  }
-
-  // 2b. Check performance navigation entries (contains the actual loaded page URL)
-  if (typeof performance !== "undefined" && typeof performance.getEntriesByType === "function") {
-    try {
-      const navEntries = performance.getEntriesByType("navigation");
-      if (navEntries && navEntries.length > 0 && navEntries[0].name) {
-        const origin = extractOriginDirect(navEntries[0].name);
-        if (origin) return origin;
+      const origin = extractOriginWithFilter(document.baseURI);
+      if (origin) {
+        console.debug(`[getApiBaseUrl] Step 2: document.baseURI: "${document.baseURI}", extracted: "${origin}"`);
+        return origin;
       }
     } catch (e) {}
   }
 
-  // 3. Check import.meta.url (reliable for ES modules, even if compiled as blob URLs in sandboxed/iframe environments)
+  // 3. Try import.meta.url
   if (typeof import.meta !== "undefined" && import.meta.url) {
     try {
       const origin = extractOriginWithFilter(import.meta.url);
-      if (origin) return origin;
+      if (origin) {
+        console.debug(`[getApiBaseUrl] Step 3: import.meta.url: "${import.meta.url}", extracted: "${origin}"`);
+        return origin;
+      }
     } catch (e) {}
   }
 
-  // 3b. Check performance resource timing entries (very robust under sandboxed iframes)
-  if (typeof performance !== "undefined" && typeof performance.getEntries === "function") {
+  // 4. Try same-origin parent context
+  if (typeof window !== "undefined") {
     try {
-      const entries = performance.getEntries();
-      for (let i = 0; i < entries.length; i++) {
-        const name = entries[i].name;
-        if (name) {
-          const origin = extractOriginWithFilter(name);
-          if (origin) return origin;
+      if (window.parent && window.parent !== window) {
+        if (window.parent.location && window.parent.location.href) {
+          const origin = extractOriginWithFilter(window.parent.location.href);
+          if (origin) {
+            console.debug(`[getApiBaseUrl] Step 4: window.parent.location.href extracted: "${origin}"`);
+            return origin;
+          }
+        }
+      }
+    } catch (e) {}
+    try {
+      if (window.top && window.top !== window) {
+        if (window.top.location && window.top.location.href) {
+          const origin = extractOriginWithFilter(window.top.location.href);
+          if (origin) {
+            console.debug(`[getApiBaseUrl] Step 4b: window.top.location.href extracted: "${origin}"`);
+            return origin;
+          }
         }
       }
     } catch (e) {}
   }
 
-  // 4. Check document script/link tags
+  // 5. Scan document script, link, img elements for absolute URLs (ultimate DOM scanning)
   if (typeof document !== "undefined") {
     try {
-      if (document.currentScript && (document.currentScript as HTMLScriptElement).src) {
-        const origin = extractOriginWithFilter((document.currentScript as HTMLScriptElement).src);
-        if (origin) return origin;
-      }
-
+      // Scripts
       const scripts = document.getElementsByTagName("script");
       for (let i = 0; i < scripts.length; i++) {
-        const origin = extractOriginWithFilter(scripts[i].src);
-        if (origin) return origin;
+        const src = scripts[i].src || scripts[i].getAttribute("src") || "";
+        if (src && src.startsWith("http")) {
+          const origin = extractOriginWithFilter(src);
+          if (origin) {
+            console.debug(`[getApiBaseUrl] Step 5a (script): Found origin in script: "${origin}" from src: "${src}"`);
+            return origin;
+          }
+        }
       }
 
+      // Links (stylesheets, etc)
       const links = document.getElementsByTagName("link");
       for (let i = 0; i < links.length; i++) {
-        const origin = extractOriginWithFilter(links[i].href);
-        if (origin) return origin;
+        const href = links[i].href || links[i].getAttribute("href") || "";
+        if (href && href.startsWith("http")) {
+          const origin = extractOriginWithFilter(href);
+          if (origin) {
+            console.debug(`[getApiBaseUrl] Step 5b (link): Found origin in link: "${origin}" from href: "${href}"`);
+            return origin;
+          }
+        }
+      }
+
+      // Images
+      const imgs = document.getElementsByTagName("img");
+      for (let i = 0; i < imgs.length; i++) {
+        const src = imgs[i].src || imgs[i].getAttribute("src") || "";
+        if (src && src.startsWith("http")) {
+          const origin = extractOriginWithFilter(src);
+          if (origin) {
+            console.debug(`[getApiBaseUrl] Step 5c (img): Found origin in img: "${origin}" from src: "${src}"`);
+            return origin;
+          }
+        }
       }
     } catch (e) {}
   }
 
-  // 5. Try the compile-time injected APP_URL if available
+  // 6. Check performance resource timing entries
+  if (typeof performance !== "undefined" && typeof performance.getEntries === "function") {
+    try {
+      const entries = performance.getEntries();
+      for (let i = 0; i < entries.length; i++) {
+        const name = entries[i].name;
+        if (name && name.startsWith("http")) {
+          const origin = extractOriginWithFilter(name);
+          if (origin) {
+            console.debug(`[getApiBaseUrl] Step 6: Found origin in performance entries: "${origin}" (from: "${name}")`);
+            return origin;
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 7. Try the compile-time injected APP_URL if available
   try {
     const injectedUrl = process.env.APP_URL;
     const origin = extractOriginWithFilter(injectedUrl || "");
-    if (origin) return origin;
+    if (origin) {
+      console.debug(`[getApiBaseUrl] Step 7: process.env.APP_URL: "${injectedUrl}", extracted: "${origin}"`);
+      return origin;
+    }
   } catch (e) {}
 
-  // 6. Direct fallback to window.location.origin
+  // 8. Fallback to extracting from process.env.VITE_APP_URL or other envs
+  try {
+    for (const [key, value] of Object.entries((import.meta as any).env || {})) {
+      if (typeof value === "string" && value.startsWith("http")) {
+        const origin = extractOriginWithFilter(value);
+        if (origin) {
+          console.debug(`[getApiBaseUrl] Step 8: import.meta.env.${key}: "${value}", extracted: "${origin}"`);
+          return origin;
+        }
+      }
+    }
+  } catch (e) {}
+
+  // 9. Direct fallback to window.location.origin
   if (typeof window !== "undefined" && window.location && window.location.origin && window.location.origin !== "null" && window.location.origin !== "about:") {
+    console.debug(`[getApiBaseUrl] Step 9: Using window.location.origin: "${window.location.origin}"`);
     return window.location.origin;
   }
 
+  console.warn("[getApiBaseUrl] All steps failed to resolve base URL. Returning empty string.");
   return "";
 }
 
@@ -160,15 +231,31 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
   let finalInput = input;
   
   if (typeof input === "string" && input.startsWith("/api/")) {
-    finalInput = baseUrl ? `${baseUrl}${input}` : input;
+    finalInput = (baseUrl && baseUrl.startsWith("http")) ? `${baseUrl}${input}` : input;
+    console.debug(`[apiFetch] String path resolved: "${input}" -> "${finalInput}" (baseUrl: "${baseUrl}")`);
   } else if (input instanceof URL && input.pathname.startsWith("/api/")) {
-    // If it's a URL object, we can construct a new one with the correct base if needed
-    if (baseUrl && (input.origin === window.location.origin || input.origin === "null")) {
-      const updatedUrl = new URL(input.pathname + input.search + input.hash, baseUrl);
-      finalInput = updatedUrl;
+    if (baseUrl && baseUrl.startsWith("http") && (input.origin === window.location.origin || input.origin === "null")) {
+      try {
+        const updatedUrl = new URL(input.pathname + input.search + input.hash, baseUrl);
+        finalInput = updatedUrl;
+        console.debug(`[apiFetch] URL object resolved: "${input.href}" -> "${finalInput.href}"`);
+      } catch (e) {
+        console.error(`[apiFetch] Failed to construct absolute URL from: "${input.pathname}" with base: "${baseUrl}":`, e);
+      }
     }
   }
   
-  return fetch(finalInput, init);
+  try {
+    const response = await fetch(finalInput, init);
+    // Log content type warning if we expect JSON but get HTML (common when offline fallback triggers)
+    const contentType = response.headers.get("content-type") || "";
+    if (response.ok && contentType.includes("text/html") && typeof finalInput === "string" && finalInput.includes("/api/")) {
+      console.error(`[apiFetch] Critical warning: Endpoint "${finalInput}" returned HTML instead of JSON. This typically means the API endpoint was not found and SPA fallback returned index.html.`);
+    }
+    return response;
+  } catch (error) {
+    console.error(`[apiFetch] Network/Fetch error for "${typeof finalInput === "string" ? finalInput : (finalInput as any).url || (finalInput as any).href}":`, error);
+    throw error;
+  }
 }
 

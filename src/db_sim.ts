@@ -119,6 +119,7 @@ const DEFAULT_CONFIG: StrategyConfig = {
     auto_retrain_weekly: true,
     retrain_on_perf_drop: true,
     retrain_on_feature_drift: true,
+    psi_threshold: 0.25,
   },
   sentiment_settings: {
     entry_threshold_long: 0.25,
@@ -137,14 +138,16 @@ const DEFAULT_CONFIG: StrategyConfig = {
       [NewsSource.COINTELEGRAPH]: 20,
       [NewsSource.THEBLOCK]: 20,
       [NewsSource.BITCOIN_MAGAZINE]: 15,
-      [NewsSource.TWITTER]: 10,
-      [NewsSource.REDDIT]: 10,
+      [NewsSource.CRYPTOPANIC]: 10,
+      [NewsSource.TWITTER]: 5,
+      [NewsSource.REDDIT]: 5,
     },
     refresh_rates_min: {
       [NewsSource.COINDESK]: 5,
       [NewsSource.COINTELEGRAPH]: 5,
       [NewsSource.THEBLOCK]: 5,
       [NewsSource.BITCOIN_MAGAZINE]: 5,
+      [NewsSource.CRYPTOPANIC]: 5,
       [NewsSource.TWITTER]: 10,
       [NewsSource.REDDIT]: 15,
     },
@@ -823,6 +826,12 @@ class DatabaseManager {
       }
       if (this.cache.config.risk_management.default_order_execution === undefined) {
         this.cache.config.risk_management.default_order_execution = "TAKER";
+        changed = true;
+      }
+    }
+    if (this.cache?.config?.ml_settings) {
+      if (this.cache.config.ml_settings.psi_threshold === undefined) {
+        this.cache.config.ml_settings.psi_threshold = 0.25;
         changed = true;
       }
     }

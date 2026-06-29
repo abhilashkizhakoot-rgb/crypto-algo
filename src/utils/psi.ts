@@ -37,17 +37,17 @@ export function calculatePSI(
     }
   }
 
-  // Calculate percentages with a tiny smoothing epsilon to avoid division-by-zero or log-of-zero
-  const epsilon = 0.0001;
+  // Laplace smoothing to handle sparse bins in small sample sizes (e.g., 48 periods)
+  // This adds a pseudo-count (alpha = 1.0) to each bin to prevent zero-frequency ratio explosions.
+  const alpha = 1.0; 
   const actualFrequencies = actualCounts.map(
-    (count) => count / actualValues.length
+    (count) => (count + alpha) / (actualValues.length + numBins * alpha)
   );
 
   let psiValue = 0;
   for (let i = 0; i < numBins; i++) {
-    // Smooth actual and expected to be non-zero percentages
-    const act = actualFrequencies[i] < epsilon ? epsilon : actualFrequencies[i];
-    const exp = expectedFrequencies[i] < epsilon ? epsilon : expectedFrequencies[i];
+    const act = actualFrequencies[i];
+    const exp = expectedFrequencies[i];
 
     // Compute the bin contribution to PSI
     const binPsi = (act - exp) * Math.log(act / exp);
@@ -59,6 +59,7 @@ export function calculatePSI(
 
 /**
  * Historical/Training distribution specifications (Reference Baseline)
+ * Calibrated specifically for the highly volatile Bitcoin spot/derivatives market.
  */
 export const FEATURE_PROFILES = {
   RSI: {
@@ -69,14 +70,14 @@ export const FEATURE_PROFILES = {
   },
   MACD: {
     name: "MACD Spread %",
-    // Bin edges: <=-0.5%, <=-0.1%, <=0.1%, <=0.5%, >0.5%
-    binEdges: [-0.5, -0.1, 0.1, 0.5],
+    // Bin edges calibrated for BTC trends: <=-1.2%, <=-0.3%, <=0.3%, <=1.2%, >1.2%
+    binEdges: [-1.2, -0.3, 0.3, 1.2],
     expectedFreqs: [0.15, 0.25, 0.20, 0.25, 0.15],
   },
   VOLATILITY: {
     name: "ATR Volatility Ratio",
-    // Bin edges: <=0.7, <=0.9, <=1.1, <=1.4, >1.4
-    binEdges: [0.7, 0.9, 1.1, 1.4],
+    // Bin edges calibrated for BTC volatility expansions: <=0.6, <=0.9, <=1.3, <=1.8, >1.8
+    binEdges: [0.6, 0.9, 1.3, 1.8],
     expectedFreqs: [0.15, 0.25, 0.35, 0.15, 0.10],
   },
 };

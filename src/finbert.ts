@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { AspectNegationParser } from "./sentimentEngine.js";
+
 export interface FinBertProbabilities {
   positive: number;
   neutral: number;
@@ -15,6 +17,7 @@ export interface FinBertOutput {
   probabilities: FinBertProbabilities;
   logits: [number, number, number]; // [positive, neutral, negative]
   tokens: string[];
+  rulesApplied?: string[];
 }
 
 /**
@@ -131,8 +134,11 @@ export class FinBertSentimentModel {
    * Analyzes financial text using FinBERT architecture logic
    */
   public static analyze(text: string): FinBertOutput {
-    // 1. Simulating Tokenization (stripping punctuations, lowercasing)
-    const cleanedText = text.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "");
+    // 1. Advanced negation pre-processing to resolve complex double negatives
+    const preProcessed = AspectNegationParser.preProcess(text);
+    
+    // Simulating Tokenization (stripping punctuations, lowercasing)
+    const cleanedText = preProcessed.processedText.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "");
     const words = cleanedText.split(/\s+/).filter((w) => w.length > 0);
 
     // Initial base logits: [positive, neutral, negative]
@@ -141,18 +147,49 @@ export class FinBertSentimentModel {
     let neuLogit = 1.0;
     let negLogit = -0.5;
 
-    // 2. Scan text for vocabulary weights and bi-gram patterns
+    let negationActive = false;
+    let negationScopeRemaining = 0;
+
+    // 2. Scan text for vocabulary weights with active negation scope shifts
     for (let i = 0; i < words.length; i++) {
       const word = words[i];
 
+      // Detect negation word
+      if (AspectNegationParser.isNegation(word)) {
+        negationActive = true;
+        negationScopeRemaining = 3; // Set scope for the next 3 words
+        neuLogit += 0.25; // Negation introduces some doubt / neutral bias
+        continue; // Skip processing the negation word as a standard token
+      }
+
+      if (negationScopeRemaining <= 0) {
+        negationActive = false;
+      }
+
       // Single word checks
       if (this.vocabPos[word] !== undefined) {
-        posLogit += this.vocabPos[word];
-        neuLogit -= 0.3;
+        const val = this.vocabPos[word];
+        if (negationActive) {
+          // Inside a negation scope, a positive word becomes a strong negative signal
+          negLogit += val * 1.2;
+          posLogit -= val * 0.5;
+          neuLogit += 0.1;
+        } else {
+          posLogit += val;
+          neuLogit -= 0.3;
+        }
       }
       if (this.vocabNeg[word] !== undefined) {
-        negLogit += this.vocabNeg[word];
-        neuLogit -= 0.3;
+        const val = this.vocabNeg[word];
+        if (negationActive) {
+          // Inside a negation scope, a negative word acts as a positive/bullish signal
+          posLogit += val * 1.2;
+          negLogit -= val * 0.5;
+          neuLogit += 0.1;
+        } else {
+          negLogit += val;
+          neuLogit -= 0.3;
+        }
       }
       if (this.vocabNeu[word] !== undefined) {
         neuLogit += this.vocabNeu[word];
@@ -162,16 +199,33 @@ export class FinBertSentimentModel {
       if (i < words.length - 1) {
         const bigram = `${word} ${words[i + 1]}`;
         if (this.vocabPos[bigram] !== undefined) {
-          posLogit += this.vocabPos[bigram] * 1.5;
-          neuLogit -= 0.5;
+          const val = this.vocabPos[bigram];
+          if (negationActive) {
+            negLogit += val * 1.5;
+            posLogit -= val * 0.6;
+          } else {
+            posLogit += val * 1.5;
+            neuLogit -= 0.5;
+          }
         }
         if (this.vocabNeg[bigram] !== undefined) {
-          negLogit += this.vocabNeg[bigram] * 1.5;
-          neuLogit -= 0.5;
+          const val = this.vocabNeg[bigram];
+          if (negationActive) {
+            posLogit += val * 1.5;
+            negLogit -= val * 0.6;
+          } else {
+            negLogit += val * 1.5;
+            neuLogit -= 0.5;
+          }
         }
         if (this.vocabNeu[bigram] !== undefined) {
           neuLogit += this.vocabNeu[bigram] * 1.2;
         }
+      }
+
+      // Decrement the active scope window
+      if (negationActive) {
+        negationScopeRemaining--;
       }
     }
 
@@ -180,7 +234,6 @@ export class FinBertSentimentModel {
     const [pPos, pNeu, pNeg] = this.softmax(logits);
 
     // 4. Derive overall sentiment score: positive probability - negative probability
-    // This perfectly mimics the standard FinBERT score extraction!
     const sentiment = Number((pPos - pNeg).toFixed(4));
 
     // Determine label
@@ -201,6 +254,7 @@ export class FinBertSentimentModel {
       },
       logits: [Number(posLogit.toFixed(4)), Number(neuLogit.toFixed(4)), Number(negLogit.toFixed(4))],
       tokens: words,
+      rulesApplied: preProcessed.rulesApplied,
     };
   }
 }

@@ -42,6 +42,7 @@ export enum NewsSource {
   BITCOIN_MAGAZINE = "BITCOIN_MAGAZINE",
   TWITTER = "TWITTER",
   REDDIT = "REDDIT",
+  CRYPTOPANIC = "CRYPTOPANIC",
 }
 
 export interface ExchangeCredentials {
@@ -182,6 +183,7 @@ export interface StrategyConfig {
     auto_retrain_weekly: boolean;
     retrain_on_perf_drop: boolean;
     retrain_on_feature_drift: boolean;
+    psi_threshold?: number;
   };
   sentiment_settings: {
     entry_threshold_long: number; // e.g. 0.25

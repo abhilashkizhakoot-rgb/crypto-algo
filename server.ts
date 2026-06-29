@@ -13,6 +13,44 @@ import { tradingEngine } from "./src/engine.js";
 import { ConnectionStatus } from "./src/types.js";
 
 function getRequestBaseUrl(req: express.Request): string {
+  // 1. Scan all environment variables first for any .run.app URL
+  for (const [key, value] of Object.entries(process.env)) {
+    if (typeof value === "string") {
+      const match = value.match(/(https?:\/\/[a-zA-Z0-9.-]+\.run\.app)/i);
+      if (match) {
+        return match[1];
+      }
+    }
+  }
+
+  // 2. Try to extract from origin or referer headers (highly reliable under proxies/sandboxes)
+  const originHeader = req.headers["origin"];
+  if (originHeader && typeof originHeader === "string" && originHeader.startsWith("http") && originHeader.includes(".run.app")) {
+    return originHeader;
+  }
+
+  const refererHeader = req.headers["referer"];
+  if (refererHeader && typeof refererHeader === "string" && refererHeader.startsWith("http") && refererHeader.includes(".run.app")) {
+    try {
+      const urlObj = new URL(refererHeader);
+      if (urlObj.origin && urlObj.origin.startsWith("http") && urlObj.origin.includes(".run.app")) {
+        return urlObj.origin;
+      }
+    } catch (e) {}
+  }
+
+  // 3. Scan all request headers for any .run.app domain
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (typeof value === "string") {
+      const match = value.match(/([a-zA-Z0-9.-]+\.run\.app)/i);
+      if (match) {
+        const proto = req.headers["x-forwarded-proto"] || "https";
+        const protocol = Array.isArray(proto) ? proto[0] : proto;
+        return `${protocol}://${match[1]}`;
+      }
+    }
+  }
+
   let proto = req.headers["x-forwarded-proto"] || req.protocol || "http";
   if (Array.isArray(proto)) {
     proto = proto[0];
@@ -501,12 +539,13 @@ async function startServer() {
     // Intercept GET requests for HTML pages to inject __API_BASE_URL__ dynamically
     app.use(async (req, res, next) => {
       const isHtml = 
-        (req.headers.accept && req.headers.accept.includes("text/html")) ||
-        req.path === "/" ||
-        req.path.endsWith(".html") ||
-        (!req.path.includes(".") && !req.path.startsWith("/api/"));
+        req.method === "GET" &&
+        !req.path.startsWith("/api/") &&
+        !req.path.startsWith("/@") &&
+        (!req.path.includes(".") || req.path.endsWith(".html")) &&
+        ((req.headers.accept && req.headers.accept.includes("text/html")) || req.path === "/");
 
-      if (req.method === "GET" && isHtml && !req.path.startsWith("/api/")) {
+      if (isHtml) {
         try {
           const url = req.originalUrl;
           let html = fs.readFileSync(path.join(process.cwd(), "index.html"), "utf-8");

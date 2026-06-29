@@ -62,6 +62,34 @@ const FALLBACK_HEADLINES: RSSArticle[] = [
     title: "Large Scale Long Liquidations Shake Leverage Market; Price Drops to Support Band",
     source: NewsSource.THEBLOCK,
   },
+  {
+    title: "SEC does not rule out approving the spot Solana options ETF next week",
+    source: NewsSource.COINDESK,
+  },
+  {
+    title: "SEC does not rule out approving the spot Solana options ETF next week",
+    source: NewsSource.CRYPTOPANIC,
+  },
+  {
+    title: "Federal Reserve does not reject interest rate cuts if CPI numbers cool down",
+    source: NewsSource.COINTELEGRAPH,
+  },
+  {
+    title: "Federal Reserve does not reject interest rate cuts if CPI numbers cool down",
+    source: NewsSource.COINDESK,
+  },
+  {
+    title: "OMG this coin is not a scam, definitely going to the moon today trust me guys!",
+    source: NewsSource.TWITTER,
+  },
+  {
+    title: "The market drop is not bad for long-term spot accumulation",
+    source: NewsSource.REDDIT,
+  },
+  {
+    title: "Regulatory update: SEC fails to halt spot ETF derivatives expansion",
+    source: NewsSource.CRYPTOPANIC,
+  }
 ];
 
 export async function fetchLiveRSSHeadlines(): Promise<RSSArticle[]> {
