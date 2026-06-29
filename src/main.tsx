@@ -63,7 +63,7 @@ if (originalFetch) {
           }
         }
       }
-      return originalFetch.call(this, resolvedInput, init);
+      return originalFetch(resolvedInput, init);
     };
 
     try {
@@ -84,52 +84,47 @@ if (originalFetch) {
 const OriginalEventSource = window.EventSource;
 if (OriginalEventSource) {
   try {
-    const PatchedEventSource = function (this: any, url: string | URL, eventSourceInitDict?: EventSourceInit) {
-      let resolvedUrl = url;
-      if (typeof url === "string") {
-        if (url.startsWith("/")) {
+    const PatchedEventSource = new Proxy(OriginalEventSource, {
+      construct(target, args, newTarget) {
+        const [url, eventSourceInitDict] = args;
+        let resolvedUrl = url;
+        if (typeof url === "string") {
+          if (url.startsWith("/")) {
+            const baseUrl = getApiBaseUrl();
+            if (baseUrl && baseUrl.startsWith("http")) {
+              resolvedUrl = baseUrl + url;
+            }
+          } else {
+            try {
+              const urlObj = new URL(url);
+              if (urlObj.protocol === "about:" || urlObj.origin === "null") {
+                const baseUrl = getApiBaseUrl();
+                if (baseUrl && baseUrl.startsWith("http")) {
+                  resolvedUrl = new URL(urlObj.pathname + urlObj.search, baseUrl).href;
+                }
+              }
+            } catch (e) {
+              if (url.startsWith("null/")) {
+                const baseUrl = getApiBaseUrl();
+                if (baseUrl && baseUrl.startsWith("http")) {
+                  resolvedUrl = baseUrl + url.substring(4);
+                }
+              }
+            }
+          }
+        } else if (url instanceof URL && url.pathname.startsWith("/")) {
           const baseUrl = getApiBaseUrl();
-          if (baseUrl && baseUrl.startsWith("http")) {
-            resolvedUrl = baseUrl + url;
-          }
-        } else {
-          try {
-            const urlObj = new URL(url);
-            if (urlObj.protocol === "about:" || urlObj.origin === "null") {
-              const baseUrl = getApiBaseUrl();
-              if (baseUrl && baseUrl.startsWith("http")) {
-                resolvedUrl = new URL(urlObj.pathname + urlObj.search, baseUrl).href;
-              }
-            }
-          } catch (e) {
-            if (url.startsWith("null/")) {
-              const baseUrl = getApiBaseUrl();
-              if (baseUrl && baseUrl.startsWith("http")) {
-                resolvedUrl = baseUrl + url.substring(4);
-              }
-            }
+          if (baseUrl && baseUrl.startsWith("http") && (url.protocol === "about:" || url.origin === "null")) {
+            try {
+              resolvedUrl = new URL(url.pathname + url.search, baseUrl).href;
+            } catch (e) {}
           }
         }
-      } else if (url instanceof URL && url.pathname.startsWith("/")) {
-        const baseUrl = getApiBaseUrl();
-        if (baseUrl && baseUrl.startsWith("http") && (url.protocol === "about:" || url.origin === "null")) {
-          try {
-            resolvedUrl = new URL(url.pathname + url.search, baseUrl).href;
-          } catch (e) {}
-        }
+        
+        const finalUrl = resolvedUrl instanceof URL ? resolvedUrl.href : String(resolvedUrl);
+        return Reflect.construct(target, [finalUrl, eventSourceInitDict], newTarget);
       }
-      
-      const finalUrl = resolvedUrl instanceof URL ? resolvedUrl.href : String(resolvedUrl);
-      return new OriginalEventSource(finalUrl, eventSourceInitDict);
-    };
-
-    // Copy prototype and static properties to match native EventSource expectations
-    PatchedEventSource.prototype = OriginalEventSource.prototype;
-    if ((OriginalEventSource as any).CONNECTING !== undefined) {
-      (PatchedEventSource as any).CONNECTING = (OriginalEventSource as any).CONNECTING;
-      (PatchedEventSource as any).OPEN = (OriginalEventSource as any).OPEN;
-      (PatchedEventSource as any).CLOSED = (OriginalEventSource as any).CLOSED;
-    }
+    });
 
     try {
       Object.defineProperty(window, "EventSource", {
