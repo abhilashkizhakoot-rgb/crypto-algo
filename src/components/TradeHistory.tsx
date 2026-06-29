@@ -572,7 +572,7 @@ export default function TradeHistory({ trades, isPaperMode = true, onRefresh, co
                                <div className="space-y-1.5 text-xs font-sans">
                                  <div className="flex justify-between border-b border-slate-200/50 pb-1">
                                    <span className="text-slate-400">Market Regime:</span>
-                                   <span className="font-semibold text-slate-700 uppercase text-[10px]">{t.regime_at_entry.replace("_", " ")}</span>
+                                   <span className="font-semibold text-slate-700 uppercase text-[10px]">{(t.regime_at_entry || "").replace("_", " ")}</span>
                                  </div>
                                  <div className="flex justify-between">
                                    <span className="text-slate-400">Entry Score:</span>
