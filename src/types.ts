@@ -184,6 +184,7 @@ export interface StrategyConfig {
     retrain_on_perf_drop: boolean;
     retrain_on_feature_drift: boolean;
     psi_threshold?: number;
+    psi_halt_threshold?: number;
   };
   sentiment_settings: {
     entry_threshold_long: number; // e.g. 0.25

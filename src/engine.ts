@@ -208,6 +208,7 @@ class TradingEngine {
       psi_volatility: this.psiVolatility,
       psi_max: this.psiMax,
       psi_threshold: config.ml_settings.psi_threshold ?? 0.25,
+      psi_halt_threshold: config.ml_settings.psi_halt_threshold ?? 0.75,
       active_ml_model: this.getActiveMLModelName(),
       trade_size_multiplier: this.getTradeSizeMultiplier(),
     };
@@ -623,15 +624,16 @@ class TradingEngine {
     // Optimized for 29-minute frequency scalping:
     // Bitcoin markets are volatile and exhibit high feature distribution drift (high PSI) regularly.
     // A strict PSI threshold of 0.25 leads to excessive trading halts.
-    // We raise the soft threshold to 0.55 for scalping and make sure it only halts trading if drift is critical (PSI > 0.75).
+    // We raise the soft threshold to 0.55 for scalping and make sure it only halts trading if drift is critical (PSI > psiHaltLimit).
     const psiThreshold = config.ml_settings.psi_threshold !== undefined ? config.ml_settings.psi_threshold : 0.55;
-    const driftHalted = config.ml_settings.retrain_on_feature_drift && this.psiMax > 0.75;
+    const psiHaltLimit = config.ml_settings.psi_halt_threshold !== undefined ? config.ml_settings.psi_halt_threshold : 0.75;
+    const driftHalted = config.ml_settings.retrain_on_feature_drift && this.psiMax > psiHaltLimit;
     conditions.push({
       name: "Feature Drift Check (PSI)",
       met: !driftHalted,
-      current_value: `PSI = ${this.psiMax.toFixed(3)} (${this.psiMax > 0.75 ? "DRIFT CRITICAL" : "STABLE/ACCEPTABLE"})`,
-      required: "Max PSI <= 0.75 (Halt limit)",
-      description: "Measures statistical divergence (Population Stability Index). Softened limit (0.75) for 29m frequency scalping.",
+      current_value: `PSI = ${this.psiMax.toFixed(3)} (${this.psiMax > psiHaltLimit ? "DRIFT CRITICAL" : "STABLE/ACCEPTABLE"})`,
+      required: `Max PSI <= ${psiHaltLimit.toFixed(2)} (Halt limit)`,
+      description: `Measures statistical divergence (Population Stability Index). Configurable trading halt threshold: ${psiHaltLimit.toFixed(2)}.`,
       priority: "HIGH",
     });
 
@@ -926,8 +928,9 @@ class TradingEngine {
       // Alert on significant drift shift if config is enabled
       const config = dbManager.getConfig();
       const psiThreshold = config.ml_settings.psi_threshold ?? 0.25;
+      const psiHaltLimit = config.ml_settings.psi_halt_threshold ?? 0.75;
       if (config.ml_settings.retrain_on_feature_drift && prevPsiMax <= psiThreshold && this.psiMax > psiThreshold) {
-        this.log(`🚨 [PSI FEATURE DRIFT WARNING] Population Stability Index (PSI) shifted from ${prevPsiMax.toFixed(2)} to ${this.psiMax.toFixed(2)} (> ${psiThreshold.toFixed(2)} limit)! System is gating automated entry rules while maintaining standard fixed trade sizes.`);
+        this.log(`🚨 [PSI FEATURE DRIFT WARNING] Population Stability Index (PSI) shifted from ${prevPsiMax.toFixed(2)} to ${this.psiMax.toFixed(2)} (> ${psiThreshold.toFixed(2)} alert limit)! Automatic retraining is queued. Automated entry gates will halt if PSI exceeds the hard limit of ${psiHaltLimit.toFixed(2)}.`);
       }
     } catch (e: any) {
       console.error("Failed to compute PSI metrics:", e);
@@ -1567,14 +1570,15 @@ class TradingEngine {
     // Optimized for 29-minute frequency scalping:
     // Bitcoin markets are volatile and exhibit high feature distribution drift (high PSI) regularly.
     // A strict PSI threshold of 0.25 leads to excessive trading halts.
-    // We raise the soft threshold to 0.55 for scalping and make sure it only halts trading if drift is critical (PSI > 0.75).
+    // We raise the soft threshold to 0.55 for scalping and make sure it only halts trading if drift is critical (PSI > psiHaltLimit).
     const psiThreshold = config.ml_settings.psi_threshold !== undefined ? config.ml_settings.psi_threshold : 0.55;
-    const driftHalted = config.ml_settings.retrain_on_feature_drift && this.psiMax > 0.75;
+    const psiHaltLimit = config.ml_settings.psi_halt_threshold !== undefined ? config.ml_settings.psi_halt_threshold : 0.75;
+    const driftHalted = config.ml_settings.retrain_on_feature_drift && this.psiMax > psiHaltLimit;
     conditions.push({
       name: "Feature Drift Check (PSI)",
       met: !driftHalted,
-      current_value: `PSI = ${this.psiMax.toFixed(3)} (${this.psiMax > 0.75 ? "DRIFT CRITICAL" : "STABLE/ACCEPTABLE"})`,
-      required: "Max PSI <= 0.75 (Halt limit)",
+      current_value: `PSI = ${this.psiMax.toFixed(3)} (${this.psiMax > psiHaltLimit ? "DRIFT CRITICAL" : "STABLE/ACCEPTABLE"})`,
+      required: `Max PSI <= ${psiHaltLimit.toFixed(2)} (Halt limit)`,
     });
 
     // Apply bypassed/skipped gates

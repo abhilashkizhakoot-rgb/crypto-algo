@@ -622,17 +622,26 @@ export default function Dashboard({
             <div>
               {(() => {
                 const threshold = status.psi_threshold ?? 0.25;
+                const haltLimit = status.psi_halt_threshold ?? 0.75;
                 const isDrifting = (status.psi_max || 0) > threshold;
+                const isHalted = (status.psi_max || 0) > haltLimit;
+
+                let badgeClass = "bg-emerald-50 border-emerald-200 text-emerald-700";
+                let badgeText = "✅ STABLE";
+                if (isHalted) {
+                  badgeClass = "bg-rose-50 border-rose-200 text-rose-700 font-extrabold animate-pulse";
+                  badgeText = "🚨 CRITICAL DRIFT (HALTED)";
+                } else if (isDrifting) {
+                  badgeClass = "bg-amber-50 border-amber-200 text-amber-700 font-bold";
+                  badgeText = "⚠️ WARNING (RETRAINING)";
+                }
+
                 return (
                   <>
                     <div className="flex justify-between items-center mb-1.5">
                       <span className="text-[10px] font-mono text-slate-500 uppercase">Population Stability Index (PSI)</span>
-                      <span className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-bold border ${
-                        isDrifting 
-                          ? "bg-rose-50 border-rose-200 text-rose-700" 
-                          : "bg-emerald-50 border-emerald-200 text-emerald-700"
-                      }`}>
-                        {isDrifting ? "🚨 DRIFT WARNING" : "✅ STABLE"}
+                      <span className={`px-1.5 py-0.5 rounded text-[8px] font-mono border ${badgeClass}`}>
+                        {badgeText}
                       </span>
                     </div>
 
@@ -641,22 +650,22 @@ export default function Dashboard({
                       <div>
                         <div className="flex justify-between text-[10px] font-mono mb-1">
                           <span className="text-slate-500">Maximum Feature Drift (Max PSI)</span>
-                          <span className={`font-semibold ${isDrifting ? "text-rose-600" : "text-slate-700"}`}>
+                          <span className={`font-semibold ${isHalted ? "text-rose-600" : isDrifting ? "text-amber-600" : "text-slate-700"}`}>
                             {safeFormatNumber(status.psi_max || 0.05, 3)}
                           </span>
                         </div>
                         <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
                           <div
                             className={`h-full rounded-full transition-all duration-500 ${
-                              isDrifting ? "bg-rose-500" : "bg-emerald-500"
+                              isHalted ? "bg-rose-500" : isDrifting ? "bg-amber-500" : "bg-emerald-500"
                             }`}
-                            style={{ width: `${Math.min(100, ((status.psi_max || 0.05) / (threshold * 2)) * 100)}%` }}
+                            style={{ width: `${Math.min(100, ((status.psi_max || 0.05) / Math.max(1.0, haltLimit * 1.3)) * 100)}%` }}
                           ></div>
                         </div>
                         <div className="flex justify-between text-[8px] font-mono text-slate-400 mt-1">
                           <span>Baseline (0.00)</span>
-                          <span>Safety Limit ({threshold.toFixed(2)})</span>
-                          <span>Extreme Drift ({(threshold * 2).toFixed(2)}+)</span>
+                          <span>Retrain Alert ({threshold.toFixed(2)})</span>
+                          <span>Halt Limit ({haltLimit.toFixed(2)})</span>
                         </div>
                       </div>
 

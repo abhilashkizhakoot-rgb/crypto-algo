@@ -811,6 +811,20 @@ export default function ConfigPage({
                 />
                 <p className="text-[10px] text-slate-400">The maximum Population Stability Index (PSI) allowed before triggering trade scale down and retraining (Default: 0.25)</p>
               </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-400 uppercase">PSI Checkpoint Halt Limit</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.05"
+                  max="2.00"
+                  value={mlConfig.psi_halt_threshold !== undefined ? mlConfig.psi_halt_threshold : 0.75}
+                  onChange={(e) => setMlConfig({ ...mlConfig, psi_halt_threshold: parseFloat(e.target.value) || 0.75 })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 outline-none font-mono"
+                />
+                <p className="text-[10px] text-slate-400">The maximum PSI allowed in entry checkpoints before completely halting automated entries (Default: 0.75)</p>
+              </div>
             </div>
 
             <div className="bg-slate-50/50 p-4 border border-slate-200 rounded-xl space-y-3">
