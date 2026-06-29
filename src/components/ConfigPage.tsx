@@ -33,6 +33,7 @@ const AVAILABLE_GATES = [
   { id: "credentials", label: "Exchange API Credentials Validation" },
   { id: "cooldown", label: "Loss Streak Cooldown Protection" },
   { id: "timing", label: "Optimal Session Timing Window Check (IST)" },
+  { id: "psi", label: "Active Feature Drift Check (PSI)" },
 ];
 
 interface ConfigPageProps {
