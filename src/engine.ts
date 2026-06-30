@@ -151,7 +151,8 @@ class TradingEngine {
         (name.toLowerCase().includes("credentials") && g.toLowerCase().includes("credentials")) ||
         (name.toLowerCase().includes("cooldown") && g.toLowerCase().includes("cooldown")) ||
         (name.toLowerCase().includes("timing") && g.toLowerCase().includes("timing")) ||
-        (name.toLowerCase().includes("psi") && g.toLowerCase().includes("psi"))
+        (name.toLowerCase().includes("psi") && g.toLowerCase().includes("psi")) ||
+        (name.toLowerCase().includes("vwap") && g.toLowerCase().includes("vwap"))
     );
   }
 
@@ -1475,7 +1476,7 @@ class TradingEngine {
     const pLongMet = probabilityLong > config.ml_settings.entry_threshold_long;
     const pShortMet = probabilityLong < config.ml_settings.entry_threshold_short;
     conditions.push({
-      name: "CatBoost AI Threshold",
+      name: "CatBoost AI Prediction",
       met: pLongMet || pShortMet,
       current_value: `P(LONG) = ${(probabilityLong * 100).toFixed(1)}%`,
       required: `P(LONG) > ${(config.ml_settings.entry_threshold_long * 100).toFixed(0)}% OR < ${(config.ml_settings.entry_threshold_short * 100).toFixed(0)}%`,
@@ -1502,7 +1503,7 @@ class TradingEngine {
       (signalDirection === "LONG" && isBullTrend1m) ||
       (signalDirection === "SHORT" && isBearTrend1m);
     conditions.push({
-      name: "Trend Alignment (EMA 21/50)",
+      name: "Exponential Trend Alignment",
       met: trendAligned,
       current_value: isBullTrend1m ? "BULLISH" : "BEARISH",
       required: "LONG: BULLISH (EMA21 > EMA50), SHORT: BEARISH (EMA21 < EMA50)",
@@ -1644,9 +1645,9 @@ class TradingEngine {
     // Calculate Entry Score
     let entryScore = 0;
     if (signalDirection !== "NEUTRAL") {
-      if (pLongMet || pShortMet || this.isGateSkipped(config, "CatBoost AI Threshold")) entryScore += 35;
+      if (pLongMet || pShortMet || this.isGateSkipped(config, "CatBoost AI Prediction")) entryScore += 35;
       if (regimeAligned || this.isGateSkipped(config, "Market Regime Filter")) entryScore += 15;
-      if (trendAligned || this.isGateSkipped(config, "Trend Alignment (EMA 21/50)")) entryScore += 15;
+      if (trendAligned || this.isGateSkipped(config, "Exponential Trend Alignment")) entryScore += 15;
       if (sentAligned || this.isGateSkipped(config, "Sentiment Engine Alignment")) entryScore += 15;
       if (relVolume > requiredRelVol || this.isGateSkipped(config, "Relative Volume Confirmation")) entryScore += 10;
       if (adxMet || this.isGateSkipped(config, "ADX Trend Strength Filter")) entryScore += 10;

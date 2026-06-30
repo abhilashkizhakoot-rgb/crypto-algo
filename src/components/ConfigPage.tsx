@@ -34,6 +34,7 @@ const AVAILABLE_GATES = [
   { id: "cooldown", label: "Loss Streak Cooldown Protection" },
   { id: "timing", label: "Optimal Session Timing Window Check (IST)" },
   { id: "psi", label: "Active Feature Drift Check (PSI)" },
+  { id: "vwap", label: "VWAP Deviation Anchor Check" },
 ];
 
 interface ConfigPageProps {

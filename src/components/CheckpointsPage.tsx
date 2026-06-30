@@ -154,6 +154,22 @@ export default function CheckpointsPage({ status, onRefresh, onTabChange }: Chec
       description: "Checks whether current session is optimal (6:30 PM - 1:30 AM IST) and avoids risky periods (Weekends & 2:00 AM - 8:00 AM IST).",
       priority: "HIGH",
     },
+    {
+      name: "Feature Drift Check (PSI)",
+      met: true,
+      current_value: "PSI = 0.045",
+      required: "Max PSI <= 0.25 (Halt limit)",
+      description: "Measures statistical divergence (Population Stability Index) of indicators relative to training anchors.",
+      priority: "HIGH",
+    },
+    {
+      name: "VWAP Deviation Anchor",
+      met: true,
+      current_value: "PASSING",
+      required: "LONG: Price <= Upper Band, SHORT: Price >= Lower Band",
+      description: "Guards against entering trades when price is extremely overextended (above upper band for LONG, or below lower band for SHORT).",
+      priority: "CRITICAL",
+    },
   ];
 
   const conditions = checkpointsData?.conditions || fallbackConditions;
