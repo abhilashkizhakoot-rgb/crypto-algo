@@ -1,693 +1,822 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Play, 
+  Square, 
+  TrendingUp, 
+  TrendingDown, 
+  Newspaper, 
+  Settings, 
+  Activity, 
+  CheckCircle2, 
+  XCircle, 
+  AlertTriangle, 
+  ShieldAlert, 
+  DollarSign, 
+  Clock, 
+  Plus, 
+  RefreshCw, 
+  ArrowUpRight, 
+  ArrowDownRight,
+  Sparkles
+} from 'lucide-react';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 
-import React, { useEffect, useState, useRef } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import {
-  TrendingUp,
-  Sliders,
-  BookOpen,
-  PieChart,
-  Shield,
-  Key,
-  Database,
-  Cpu,
-  AlertCircle,
-  CheckCircle2,
-  RefreshCw,
-  Server,
-  Zap,
-  Terminal,
-} from "lucide-react";
-import {
-  Trade,
-  TradingSignal,
-  NewsHeadline,
-  StrategyConfig,
-  ConfigHistoryEntry,
-  ExchangeCredentials,
-  ConnectionStatus,
-} from "./types.js";
-import { safeFormatTime } from "./utils/format";
-import { getApiBaseUrl, apiFetch } from "./utils/api.ts";
+interface Gate {
+  name: string;
+  met: boolean;
+  value: string;
+  required: string;
+  weight: number;
+  skipped: boolean;
+}
 
-// Import modular components
-import Dashboard from "./components/Dashboard.tsx";
-import ConfigPage from "./components/ConfigPage.tsx";
-import TradeHistory from "./components/TradeHistory.tsx";
-import AnalyticsPage from "./components/AnalyticsPage.tsx";
-import ManualTradingPage from "./components/ManualTradingPage.tsx";
-import ApiAnalyzer from "./components/ApiAnalyzer.tsx";
-import CheckpointsPage from "./components/CheckpointsPage.tsx";
+interface Trade {
+  id: string;
+  time: number;
+  type: 'LONG' | 'SHORT';
+  entryPrice: number;
+  exitPrice: number | null;
+  status: 'ACTIVE' | 'CLOSED';
+  pnl: number;
+  pnlPercent: number;
+  stopLoss: number;
+  takeProfit: number;
+  score: number;
+  reason: string;
+}
+
+interface Headline {
+  id: string;
+  time: number;
+  headline: string;
+  impact: 'HIGH' | 'MEDIUM' | 'LOW';
+  sentiment: number;
+}
+
+interface EngineStatus {
+  currentPrice: number;
+  isRunning: boolean;
+  config: {
+    leverage: number;
+    riskPercent: number;
+    entryScoreThreshold: number;
+    requiredRelativeVolume: number;
+    adxThreshold: number;
+    newsProtectionMinutes: number;
+    pullbackMaxPercent: number;
+    skippedGates: string[];
+  };
+  longScore: number;
+  shortScore: number;
+  longCheckpoints: Gate[];
+  shortCheckpoints: Gate[];
+  trades: Trade[];
+  logs: string[];
+  headlines: Headline[];
+  indicators: {
+    ema21_1m: number;
+    ema50_1m: number;
+    ema21_15m: number;
+    ema50_15m: number;
+    adx: number;
+    relVolume: number;
+    pullbackDistance: number;
+  };
+  newsProtection: {
+    active: boolean;
+    remainingMinutes: number;
+    lastHeadline: string;
+  };
+  candles1m: { time: number; close: number }[];
+}
 
 export default function App() {
-  const [activeTab, setActiveTabState] = useState<"dashboard" | "analytics" | "trades" | "config" | "manual" | "api_analyzer" | "checkpoints">(() => {
-    const saved = localStorage.getItem("scalper_active_tab");
-    const allowed = ["dashboard", "analytics", "trades", "config", "manual", "api_analyzer", "checkpoints"];
-    return (saved && allowed.includes(saved)) ? (saved as any) : "dashboard";
-  });
+  const [status, setStatus] = useState<EngineStatus | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const setActiveTab = (tab: "dashboard" | "analytics" | "trades" | "config" | "manual" | "api_analyzer" | "checkpoints") => {
-    localStorage.setItem("scalper_active_tab", tab);
-    setActiveTabState(tab);
-  };
+  // Settings form state
+  const [leverage, setLeverage] = useState<number>(10);
+  const [riskPercent, setRiskPercent] = useState<number>(2);
+  const [scoreThreshold, setScoreThreshold] = useState<number>(75);
+  const [relVolReq, setRelVolReq] = useState<number>(1.5);
+  const [adxReq, setAdxReq] = useState<number>(20);
+  const [newsMinutes, setNewsMinutes] = useState<number>(15);
+  const [pullbackMax, setPullbackMax] = useState<number>(0.15);
 
-  // State Buffers
-  const [status, setStatus] = useState<any>({
-    is_trading_active: false,
-    current_price: 101500,
-    current_regime: "RANGE_BOUND",
-    regime_confidence: 0.5,
-    critical_event_active: false,
-    critical_event_keyword: null,
-    protection_remaining_seconds: null,
-    active_trade: null,
-    account_balance_usdt: 100000,
-  });
+  // News Creator Form State
+  const [newsHeadline, setNewsHeadline] = useState<string>('');
+  const [newsImpact, setNewsImpact] = useState<'HIGH' | 'MEDIUM' | 'LOW'>('LOW');
+  const [newsSentiment, setNewsSentiment] = useState<number>(0.3);
 
-  const [credentials, setCredentials] = useState<ExchangeCredentials>({
-    id: "delta-key",
-    exchange_name: "Delta Exchange",
-    api_url: "",
-    ws_url: "",
-    api_key: "",
-    api_secret: "",
-    connection_status: ConnectionStatus.NOT_CONFIGURED,
-    last_tested_at: null,
-    last_successful_connection: null,
-    connection_error_message: null,
-    account_balance_usdt: 100000,
-    account_email: "",
-    product_id: 1,
-    product_symbol: "BTCUSD-FUTURES",
-    is_testnet: false,
-    is_india: false,
-    created_at: "",
-    updated_at: "",
-  });
+  // Active tab for Long/Short Checkpoints
+  const [activeStrategyTab, setActiveStrategyTab] = useState<'LONG' | 'SHORT'>('LONG');
 
-  const [trades, setTrades] = useState<Trade[]>([]);
-  const [signals, setSignals] = useState<TradingSignal[]>([]);
-  const [headlines, setHeadlines] = useState<NewsHeadline[]>([]);
-  const [logs, setLogs] = useState<string[]>([]);
-  const [config, setConfig] = useState<StrategyConfig | null>(null);
-  const [profiles, setProfiles] = useState<Record<string, StrategyConfig>>({});
-  const [configHistory, setConfigHistory] = useState<ConfigHistoryEntry[]>([]);
+  const logsEndRef = useRef<HTMLDivElement>(null);
 
-  // Analytics datasets
-  const [analyticsSummary, setAnalyticsSummary] = useState<any>({
-    total_trades: 0,
-    wins: 0,
-    losses: 0,
-    win_rate: 0,
-    profit_factor: 0,
-    net_profit_usdt: 0,
-    fees_paid_usdt: 0,
-    max_drawdown_usdt: 0,
-    sharpe_ratio: 0,
-    current_balance: 100000,
-  });
-  const [equityCurve, setEquityCurve] = useState<any[]>([]);
-  const [dailyStats, setDailyStats] = useState<any[]>([]);
-  const [regimeStats, setRegimeStats] = useState<any>({});
-
-  // Exchange Config Panel visibility
-  const [showExchangePanel, setShowExchangePanel] = useState(false);
-  const showExchangePanelRef = useRef(showExchangePanel);
-  useEffect(() => {
-    showExchangePanelRef.current = showExchangePanel;
-  }, [showExchangePanel]);
-
-  const [formApiKey, setFormApiKey] = useState("");
-  const [formApiSecret, setFormApiSecret] = useState("");
-  const [formEmail, setFormEmail] = useState("");
-  const [formIsTestnet, setFormIsTestnet] = useState(false);
-  const [formIsIndia, setFormIsIndia] = useState(false);
-  const [testingConnection, setTestingConnection] = useState(false);
-
-  // Synchronize all REST datasets
-  const fetchAllData = async (forceConfig = true) => {
+  // Fetch status helper
+  const fetchStatus = async () => {
     try {
-      // Server Status
-      const statusRes = await apiFetch("/api/status");
-      if (statusRes.ok) setStatus(await statusRes.json());
-
-      // Exchange Key
-      const credsRes = await apiFetch("/api/exchange/credentials");
-      if (credsRes.ok) {
-        const credsData = await credsRes.json();
-        setCredentials(credsData);
-        // Only update form inputs when the drawer is NOT open, to avoid resetting active edits
-        if (!showExchangePanelRef.current && !formApiKey) {
-          setFormApiKey(credsData.api_key || "");
-          setFormApiSecret(credsData.api_secret || "");
-          setFormEmail(credsData.account_email || "");
-          setFormIsTestnet(credsData.is_testnet || false);
-          setFormIsIndia(credsData.is_india || false);
-        }
+      const res = await fetch('/api/status');
+      if (res.ok) {
+        const data = await res.json() as EngineStatus;
+        setStatus(data);
+        setError(null);
+      } else {
+        throw new Error("Failed to reach backend API.");
       }
-
-      // Trades, Signals, Headlines, Logs
-      const tradesRes = await apiFetch("/api/trades");
-      if (tradesRes.ok) setTrades(await tradesRes.json());
-
-      const signalsRes = await apiFetch("/api/signals");
-      if (signalsRes.ok) setSignals(await signalsRes.json());
-
-      const headlinesRes = await apiFetch("/api/headlines");
-      if (headlinesRes.ok) setHeadlines(await headlinesRes.json());
-
-      const logsRes = await apiFetch("/api/logs");
-      if (logsRes.ok) setLogs(await logsRes.json());
-
-      // Configuration
-      if (forceConfig || !config) {
-        const configRes = await apiFetch("/api/config");
-        if (configRes.ok) setConfig(await configRes.json());
-
-        const profilesRes = await apiFetch("/api/config/profiles");
-        if (profilesRes.ok) setProfiles(await profilesRes.json());
-
-        const configHistoryRes = await apiFetch("/api/config/history");
-        if (configHistoryRes.ok) setConfigHistory(await configHistoryRes.json());
-      }
-
-      // Quantitative Analytics
-      const summaryRes = await apiFetch("/api/analytics/summary");
-      if (summaryRes.ok) setAnalyticsSummary(await summaryRes.json());
-
-      const equityRes = await apiFetch("/api/analytics/equity-curve");
-      if (equityRes.ok) setEquityCurve(await equityRes.json());
-
-      const dailyRes = await apiFetch("/api/analytics/daily-breakdown");
-      if (dailyRes.ok) setDailyStats(await dailyRes.json());
-
-      const regimeRes = await apiFetch("/api/analytics/regime-performance");
-      if (regimeRes.ok) setRegimeStats(await regimeRes.json());
-    } catch (e) {
-      console.error("Backend offline. Retrying synchronization loop in background...", e);
+    } catch (err: any) {
+      setError("Cannot sync with local Trading Engine. Make sure the server is fully started.");
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchAllData();
-
-    // 1. Establish SSE Server Sent Events Real-Time Stream
-    let eventSource: EventSource | null = null;
-    try {
-      const baseUrl = getApiBaseUrl() || window.location.origin;
-      const sseUrl = baseUrl && baseUrl.startsWith("http")
-        ? new URL("/api/stream", baseUrl).href
-        : "/api/stream";
-      eventSource = new EventSource(sseUrl);
-      eventSource.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          if (msg.type === "status") {
-            setStatus(msg.payload);
-          }
-        } catch (e) {
-          console.error("Failed to parse live stream chunk:", e);
-        }
-      };
-      eventSource.onerror = (e) => {
-        console.warn("SSE stream closed or encountered a reconnect event:", e);
-      };
-    } catch (err) {
-      console.warn("SSE EventSource not supported or failed to initialize, relying on fallback polling:", err);
-    }
-
-    // 2. Fallback Polling loop every 3 seconds to sync trades list and graphs
-    const interval = setInterval(() => {
-      fetchAllData(false);
-    }, 3000);
-
-    return () => {
-      if (eventSource) {
-        eventSource.close();
-      }
-      clearInterval(interval);
-    };
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 3000);
+    return () => clearInterval(interval);
   }, []);
 
-  const handleUpdateCredentials = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setTestingConnection(true);
+  // Sync settings when status loads
+  useEffect(() => {
+    if (status) {
+      setLeverage(status.config.leverage);
+      setRiskPercent(status.config.riskPercent);
+      setScoreThreshold(status.config.entryScoreThreshold);
+      setRelVolReq(status.config.requiredRelativeVolume);
+      setAdxReq(status.config.adxThreshold);
+      setNewsMinutes(status.config.newsProtectionMinutes);
+      setPullbackMax(status.config.pullbackMaxPercent);
+    }
+  }, [status === null]);
 
+  // Actions
+  const toggleEngine = async () => {
+    if (!status) return;
+    const endpoint = status.isRunning ? '/api/stop' : '/api/start';
     try {
-      // Save credentials first
-      const saveRes = await apiFetch("/api/exchange/credentials", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          api_key: formApiKey,
-          api_secret: formApiSecret,
-          account_email: formEmail,
-          is_testnet: formIsTestnet,
-          is_india: formIsIndia,
-        }),
-      });
-
-      if (saveRes.ok) {
-        // Trigger connectivity test
-        await apiFetch("/api/exchange/test-connection", { method: "POST" });
-        
-        // Poll status every 500ms
-        let attempts = 0;
-        const interval = setInterval(async () => {
-          attempts++;
-          const res = await apiFetch("/api/exchange/credentials");
-          if (res.ok) {
-            const data = await res.json();
-            setCredentials(data);
-            if (data.connection_status !== ConnectionStatus.TESTING || attempts >= 15) {
-              clearInterval(interval);
-              setTestingConnection(false);
-              await fetchAllData();
-            }
-          }
-        }, 500);
-      } else {
-        setTestingConnection(false);
-        alert("Failed to modify Delta Exchange credentials.");
+      const res = await fetch(endpoint, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setStatus(data.status);
       }
     } catch (e) {
-      setTestingConnection(false);
-      alert("Failed to modify Delta credentials.");
+      console.error(e);
     }
   };
 
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-700 font-sans selection:bg-indigo-100 selection:text-indigo-800">
-      {/* ================= TOP GLOW DECORATOR BAR ================= */}
-      <div className="h-1 bg-indigo-500 w-full" />
+  const handleUpdateConfig = async (newConfig: any) => {
+    try {
+      const res = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newConfig)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setStatus(data.status);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
-      {/* ================= HEADER CONTROL BAR ================= */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-40 px-6 py-4 flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm">
-        {/* Title */}
+  const handleToggleGate = async (gateName: string) => {
+    if (!status) return;
+    const isCurrentlySkipped = status.config.skippedGates.includes(gateName);
+    const updatedSkips = isCurrentlySkipped 
+      ? status.config.skippedGates.filter(g => g !== gateName)
+      : [...status.config.skippedGates, gateName];
+    
+    await handleUpdateConfig({ skippedGates: updatedSkips });
+  };
+
+  const handleManualEntry = async (type: 'LONG' | 'SHORT') => {
+    try {
+      const res = await fetch('/api/force-entry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type })
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        alert(errData.error || "Failed to trigger trade.");
+      } else {
+        const data = await res.json();
+        setStatus(data.status);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleManualExit = async () => {
+    try {
+      const res = await fetch('/api/force-exit', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setStatus(data.status);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleAddHeadline = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newsHeadline.trim()) return;
+    try {
+      const res = await fetch('/api/headline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          headline: newsHeadline,
+          impact: newsImpact,
+          sentiment: newsSentiment
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setStatus(data.status);
+        setNewsHeadline('');
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-[#0b0f19] text-gray-200">
+        <Activity className="w-12 h-12 text-emerald-500 animate-spin mb-4" />
+        <h2 className="text-xl font-bold tracking-wide">Syncing with Delta Engine...</h2>
+        <p className="text-gray-400 mt-2 text-sm">Booting background loops, please wait.</p>
+      </div>
+    );
+  }
+
+  const activeTrade = status?.trades.find(t => t.status === 'ACTIVE');
+  const pastTrades = status?.trades.filter(t => t.status === 'CLOSED') || [];
+
+  return (
+    <div className="min-h-screen bg-[#070a13] text-gray-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-black">
+      {/* Top Banner Message */}
+      {status?.newsProtection.active && (
+        <div className="bg-amber-950 border-b border-amber-800 text-amber-200 text-sm px-4 py-2 flex items-center justify-center gap-2">
+          <ShieldAlert className="w-4 h-4 text-amber-400 animate-pulse" />
+          <span>
+            <strong>News Protection Active:</strong> Entries blocked for {status.newsProtection.remainingMinutes} minutes due to headline: <em>"{status.newsProtection.lastHeadline}"</em>
+          </span>
+        </div>
+      )}
+
+      {/* Header */}
+      <header className="border-b border-[#141b2d] bg-[#0b0f19] px-6 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-indigo-50 border border-indigo-100 rounded-xl text-indigo-600">
-            <Cpu className="w-5 h-5 animate-pulse" />
+          <div className="bg-emerald-500/10 border border-emerald-500/30 p-2 rounded-lg">
+            <Activity className="w-6 h-6 text-emerald-400" />
           </div>
           <div>
-            <h1 className="font-sans font-bold text-slate-800 text-base leading-none tracking-tight">DELTA FUTURES AI SCALPER</h1>
-            <p className="text-[9px] font-mono text-slate-400 uppercase tracking-widest mt-1.5">CatBoost + FinBERT + Regime Detection</p>
+            <h1 className="text-lg font-extrabold tracking-wider text-white flex items-center gap-2">
+              DELTA ENGINE <span className="text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-400/20 px-2 py-0.5 rounded-full uppercase">Active Alpha</span>
+            </h1>
+            <p className="text-xs text-gray-400">Algorithmic Multidimensional BTC Leveraged Bot</p>
           </div>
         </div>
 
-        {/* Tab Selection */}
-        <nav className="flex items-center bg-slate-100 border border-slate-200 p-1 rounded-xl" id="nav-tabs-bar">
-          <button
-            onClick={() => setActiveTab("dashboard")}
-            className={`flex items-center gap-2 px-4 py-2 text-xs font-medium font-sans rounded-lg transition-all cursor-pointer ${
-              activeTab === "dashboard" ? "bg-white text-indigo-600 font-semibold shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-800"
-            }`}
-            id="tab-dashboard"
-          >
-            <TrendingUp className="w-3.5 h-3.5" /> Dashboard
-          </button>
-          <button
-            onClick={() => setActiveTab("analytics")}
-            className={`flex items-center gap-2 px-4 py-2 text-xs font-medium font-sans rounded-lg transition-all cursor-pointer ${
-              activeTab === "analytics" ? "bg-white text-indigo-600 font-semibold shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-800"
-            }`}
-            id="tab-analytics"
-          >
-            <PieChart className="w-3.5 h-3.5" /> Quant Analytics
-          </button>
-          <button
-            onClick={() => setActiveTab("trades")}
-            className={`flex items-center gap-2 px-4 py-2 text-xs font-medium font-sans rounded-lg transition-all cursor-pointer ${
-              activeTab === "trades" ? "bg-white text-indigo-600 font-semibold shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-800"
-            }`}
-            id="tab-trades"
-          >
-            <BookOpen className="w-3.5 h-3.5" /> Historic Logs
-          </button>
-          <button
-            onClick={() => setActiveTab("manual")}
-            className={`flex items-center gap-2 px-4 py-2 text-xs font-medium font-sans rounded-lg transition-all cursor-pointer ${
-              activeTab === "manual" ? "bg-white text-indigo-600 font-semibold shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-800"
-            }`}
-            id="tab-manual"
-          >
-            <Zap className="w-3.5 h-3.5" /> Take Trades Manually
-          </button>
-          <button
-            onClick={() => setActiveTab("checkpoints")}
-            className={`flex items-center gap-2 px-4 py-2 text-xs font-medium font-sans rounded-lg transition-all cursor-pointer ${
-              activeTab === "checkpoints" ? "bg-white text-indigo-600 font-semibold shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-800"
-            }`}
-            id="tab-checkpoints"
-          >
-            <CheckCircle2 className="w-3.5 h-3.5" /> Checkpoints radar
-          </button>
-          <button
-            onClick={() => setActiveTab("config")}
-            className={`flex items-center gap-2 px-4 py-2 text-xs font-medium font-sans rounded-lg transition-all cursor-pointer ${
-              activeTab === "config" ? "bg-white text-indigo-600 font-semibold shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-800"
-            }`}
-            id="tab-config"
-          >
-            <Sliders className="w-3.5 h-3.5" /> Strategy Params
-          </button>
-          <button
-            onClick={() => setActiveTab("api_analyzer")}
-            className={`flex items-center gap-2 px-4 py-2 text-xs font-medium font-sans rounded-lg transition-all cursor-pointer ${
-              activeTab === "api_analyzer" ? "bg-white text-indigo-600 font-semibold shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-800"
-            }`}
-            id="tab-api-analyzer"
-          >
-            <Terminal className="w-3.5 h-3.5" /> API Analyzer
-          </button>
-        </nav>
+        {/* Current Metrics */}
+        <div className="flex flex-wrap items-center gap-6">
+          <div className="bg-[#0e1424] border border-[#141b2d] px-4 py-2 rounded-xl">
+            <span className="text-xs text-gray-400 block uppercase tracking-wider font-semibold">BTC / USDT</span>
+            <span className="text-lg font-mono font-bold text-white flex items-center gap-2">
+              ${status?.currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              <span className="text-xs text-emerald-400 font-normal">Live</span>
+            </span>
+          </div>
 
-        {/* Trading Mode Switch */}
-        <div className="flex items-center bg-slate-100 border border-slate-200 p-1 rounded-xl" id="trading-mode-selector">
-          <button
-            onClick={async () => {
-              const res = await apiFetch("/api/trading/toggle-paper-mode", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ is_paper_trading: true }),
-              });
-              if (res.ok) {
-                await fetchAllData();
-              }
-            }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-              status.is_paper_trading
-                ? "bg-amber-100 border border-amber-200/50 text-amber-800 shadow-sm font-bold"
-                : "text-slate-400 hover:text-slate-700 font-semibold"
-            }`}
-          >
-            <Shield className={`w-3.5 h-3.5 ${status.is_paper_trading ? "text-amber-600 animate-pulse" : "text-slate-400"}`} />
-            Paper Mode
-          </button>
-          <button
-            onClick={async () => {
-              const res = await apiFetch("/api/trading/toggle-paper-mode", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ is_paper_trading: false }),
-              });
-              if (res.ok) {
-                await fetchAllData();
-              }
-            }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-              !status.is_paper_trading
-                ? "bg-rose-600 text-white shadow-sm font-bold"
-                : "text-slate-400 hover:text-slate-700 font-semibold"
-            }`}
-          >
-            <Zap className={`w-3.5 h-3.5 ${!status.is_paper_trading ? "text-amber-300" : "text-slate-400"}`} />
-            Live Account
-          </button>
-        </div>
-
-        {/* Exchange Key Connector Button */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => {
-              if (!showExchangePanel) {
-                // Initialize form values from current active credentials when opening
-                setFormApiKey(credentials.api_key || "");
-                setFormApiSecret(credentials.api_secret || "");
-                setFormEmail(credentials.account_email || "");
-                setFormIsTestnet(credentials.is_testnet || false);
-                setFormIsIndia(credentials.is_india || false);
-              }
-              setShowExchangePanel(!showExchangePanel);
-            }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium font-sans border transition-all cursor-pointer ${
-              credentials.connection_status === ConnectionStatus.CONNECTED
-                ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100/50"
-                : "bg-white border-slate-200 hover:bg-slate-50 text-slate-700"
-            }`}
-            id="btn-exchange-setup"
-          >
-            <Shield className="w-4 h-4" />
-            Exchange: {credentials.connection_status === ConnectionStatus.CONNECTED ? "CONNECTED" : "SETUP API KEYS"}
-          </button>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className={`w-3 h-3 rounded-full ${status?.isRunning ? 'bg-emerald-500 animate-ping' : 'bg-rose-500'}`} />
+              <span className="text-sm font-semibold">{status?.isRunning ? 'RUNNING' : 'STOPPED'}</span>
+            </div>
+            
+            <button 
+              onClick={toggleEngine}
+              className={`px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 transition duration-200 ${
+                status?.isRunning 
+                  ? 'bg-rose-600/20 text-rose-300 border border-rose-500/30 hover:bg-rose-600/30' 
+                  : 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-lg shadow-emerald-950/40'
+              }`}
+            >
+              {status?.isRunning ? (
+                <>
+                  <Square className="w-4 h-4 fill-current" /> Pause Bot
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4 fill-current" /> Start Bot
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* ================= CONFIGURATION DRAWER ================= */}
-      <AnimatePresence>
-        {showExchangePanel && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="bg-white border-b border-slate-200 overflow-hidden shadow-inner"
-            id="exchange-keys-drawer"
-          >
-            <form onSubmit={handleUpdateCredentials} className="max-w-6xl mx-auto px-6 py-6 space-y-6">
-              <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
-                <Key className="w-5 h-5 text-indigo-500" />
-                <h2 className="font-sans font-semibold text-slate-800 text-sm">Delta Exchange API Configurations</h2>
+      {/* Main Grid */}
+      <main className="flex-1 p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-y-auto">
+        
+        {/* Left Side: Market Chart, Indicators & Settings (lg: 4 cols) */}
+        <div className="lg:col-span-4 flex flex-col gap-6">
+          
+          {/* Chart Section */}
+          <div className="bg-[#0b0f19] border border-[#141b2d] rounded-2xl p-4 flex flex-col h-72">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">BTC Price Trend (1m candles)</h3>
+              <span className="text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 font-mono">
+                1m interval
+              </span>
+            </div>
+            
+            <div className="flex-1 min-h-[160px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={status?.candles1m || []}>
+                  <defs>
+                    <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="time" hide />
+                  <YAxis domain={['auto', 'auto']} hide />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px' }}
+                    labelStyle={{ color: '#94a3b8' }}
+                  />
+                  <Area type="monotone" dataKey="close" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorPrice)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Quick Indicators Grid */}
+            <div className="grid grid-cols-4 gap-2 mt-2 pt-3 border-t border-[#141b2d] text-center">
+              <div>
+                <span className="text-[10px] text-gray-400 block uppercase">EMA 21</span>
+                <span className="text-xs font-mono font-bold text-white">${status?.indicators.ema21_1m.toFixed(1)}</span>
               </div>
+              <div>
+                <span className="text-[10px] text-gray-400 block uppercase">EMA 50</span>
+                <span className="text-xs font-mono font-bold text-white">${status?.indicators.ema50_1m.toFixed(1)}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-gray-400 block uppercase">ADX</span>
+                <span className="text-xs font-mono font-bold text-white">{status?.indicators.adx.toFixed(1)}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-gray-400 block uppercase">Rel Vol</span>
+                <span className="text-xs font-mono font-bold text-white">{status?.indicators.relVolume.toFixed(2)}x</span>
+              </div>
+            </div>
+          </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                {/* Left Side: Form Controls */}
-                <div className="lg:col-span-7 space-y-5">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs text-slate-600">
-                    <div className="space-y-1.5 md:col-span-2">
-                      <label className="text-xs font-mono text-slate-400 uppercase">Delta API Key</label>
-                      <input
-                        type="text"
-                        required
-                        value={formApiKey}
-                        onChange={(e) => setFormApiKey(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 font-mono"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5 md:col-span-2">
-                      <label className="text-xs font-mono text-slate-400 uppercase">Delta API Secret</label>
-                      <input
-                        type="password"
-                        required
-                        value={formApiSecret}
-                        onChange={(e) => setFormApiSecret(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 font-mono"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-mono text-slate-400 uppercase">Account Email</label>
-                      <input
-                        type="email"
-                        required
-                        value={formEmail}
-                        onChange={(e) => setFormEmail(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400"
-                      />
-                    </div>
-
-                    <div className="flex flex-col gap-3 pt-5">
-                      <label className="flex items-center gap-2 cursor-pointer font-sans text-slate-500 hover:text-slate-800">
-                        <input
-                          type="checkbox"
-                          checked={formIsTestnet}
-                          onChange={(e) => setFormIsTestnet(e.target.checked)}
-                          className="rounded border-slate-300 bg-slate-50 text-indigo-600 focus:ring-0"
-                        />
-                        <span>Deploy on Delta Mock-Testnet environment</span>
-                      </label>
-
-                      <label className="flex items-center gap-2 cursor-pointer font-sans text-slate-500 hover:text-slate-800">
-                        <input
-                          type="checkbox"
-                          checked={formIsIndia}
-                          onChange={(e) => setFormIsIndia(e.target.checked)}
-                          className="rounded border-slate-300 bg-slate-50 text-indigo-600 focus:ring-0"
-                        />
-                        <span className="flex items-center gap-1.5">
-                          <span>Use Delta India APIs (api.india.delta.exchange)</span>
-                          <span className="text-[10px] font-mono bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded uppercase font-semibold">India</span>
-                        </span>
-                      </label>
-                    </div>
-                  </div>
+          {/* Strategy Variables Config */}
+          <div className="bg-[#0b0f19] border border-[#141b2d] rounded-2xl p-5">
+            <div className="flex items-center gap-2 mb-4 border-b border-[#141b2d] pb-2">
+              <Settings className="w-4 h-4 text-emerald-400" />
+              <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider">Configurable Guardrails</h3>
+            </div>
+            
+            <div className="flex flex-col gap-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block mb-1">Leverage</label>
+                  <input 
+                    type="number" 
+                    value={leverage} 
+                    onChange={e => {
+                      const val = Math.max(1, Math.min(125, Number(e.target.value)));
+                      setLeverage(val);
+                      handleUpdateConfig({ leverage: val });
+                    }}
+                    className="w-full bg-[#111827] border border-[#1e293b] rounded-lg px-3 py-1.5 font-mono text-sm text-white"
+                  />
                 </div>
-
-                {/* Right Side: Verification Widget */}
-                <div className="lg:col-span-5 bg-slate-50 rounded-xl p-5 border border-slate-200/60 flex flex-col justify-between space-y-4">
-                  <div>
-                    <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider font-sans mb-3 flex items-center gap-1.5">
-                      <Server className="w-3.5 h-3.5 text-indigo-500" />
-                      Verification & Current Status
-                    </h3>
-
-                    {/* Status Badge */}
-                    <div className="flex items-center gap-3 bg-white p-3 rounded-lg border border-slate-200/50 shadow-sm">
-                      <div className="relative flex h-3 w-3">
-                        {credentials.connection_status === ConnectionStatus.TESTING ? (
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                        ) : credentials.connection_status === ConnectionStatus.CONNECTED ? (
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                        ) : null}
-                        <span className={`relative inline-flex rounded-full h-3 w-3 ${
-                          credentials.connection_status === ConnectionStatus.CONNECTED
-                            ? "bg-emerald-500"
-                            : credentials.connection_status === ConnectionStatus.TESTING
-                            ? "bg-indigo-500"
-                            : "bg-rose-500"
-                        }`}></span>
-                      </div>
-                      <div>
-                        <div className="text-xs font-bold font-mono text-slate-700">
-                          {credentials.connection_status}
-                        </div>
-                        <div className="text-[10px] text-slate-400 font-sans">
-                          Last checked: {credentials.last_tested_at ? safeFormatTime(credentials.last_tested_at) : "Never"}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Error logs, if any */}
-                    {credentials.connection_status === ConnectionStatus.FAILED && credentials.connection_error_message && (
-                      <div className="mt-3 bg-rose-50 border border-rose-100 rounded-lg p-3 text-rose-700 text-[11px] font-sans">
-                        <div className="font-bold flex items-center gap-1 mb-1">
-                          <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-                          Authentication Refused
-                        </div>
-                        <p>{credentials.connection_error_message}</p>
-                      </div>
-                    )}
-
-                    {credentials.connection_status === ConnectionStatus.CONNECTED && (
-                      <div className="mt-3 bg-emerald-50 border border-emerald-100 rounded-lg p-3 text-emerald-800 text-[11px] font-sans">
-                        <div className="font-bold flex items-center gap-1 mb-1">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          Authenticated Successfully
-                        </div>
-                        <p>Delta Exchange API credentials validated and active. Live WebSocket feed is receiving ticker quotes.</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Message Signing Code Snippet */}
-                  <div className="border-t border-slate-200/60 pt-3">
-                    <h4 className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1">
-                      <span>Message Signing Protocol</span>
-                    </h4>
-                    <div className="bg-slate-900 text-slate-300 p-3 rounded-lg font-mono text-[9px] leading-relaxed space-y-1 select-all overflow-x-auto shadow-inner">
-                      <div className="text-slate-500">// Header: api-signature</div>
-                      <div>const timestamp = Math.floor(Date.now() / 1000);</div>
-                      <div>const data = "GET" + timestamp + "/v2/wallet/balances";</div>
-                      <div className="text-indigo-400 font-bold">const signature = hmac_sha256(secret, data);</div>
-                    </div>
-                  </div>
+                <div>
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block mb-1">Risk per trade %</label>
+                  <input 
+                    type="number" 
+                    value={riskPercent} 
+                    onChange={e => {
+                      const val = Math.max(0.1, Math.min(10, Number(e.target.value)));
+                      setRiskPercent(val);
+                      handleUpdateConfig({ riskPercent: val });
+                    }}
+                    className="w-full bg-[#111827] border border-[#1e293b] rounded-lg px-3 py-1.5 font-mono text-sm text-white"
+                  />
                 </div>
               </div>
 
-              <div className="flex items-center justify-between border-t border-slate-100 pt-4">
-                <div className="flex items-center gap-2 text-slate-400 text-[10px] font-mono uppercase">
-                  <Server className="w-3.5 h-3.5 text-slate-400" />
-                  Routing via verified secure proxy
+              <div>
+                <label className="text-[10px] text-gray-400 uppercase tracking-wider block mb-1">Entry Score Trigger ({scoreThreshold} pts)</label>
+                <input 
+                  type="range" 
+                  min="40" 
+                  max="100" 
+                  value={scoreThreshold} 
+                  onChange={e => {
+                    setScoreThreshold(Number(e.target.value));
+                    handleUpdateConfig({ entryScoreThreshold: Number(e.target.value) });
+                  }}
+                  className="w-full h-1.5 bg-[#1e293b] rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block mb-1">Req Relative Vol</label>
+                  <input 
+                    type="number" 
+                    step="0.1"
+                    value={relVolReq} 
+                    onChange={e => {
+                      const val = Math.max(1, Number(e.target.value));
+                      setRelVolReq(val);
+                      handleUpdateConfig({ requiredRelativeVolume: val });
+                    }}
+                    className="w-full bg-[#111827] border border-[#1e293b] rounded-lg px-3 py-1.5 font-mono text-sm text-white"
+                  />
                 </div>
-                <div className="flex gap-3">
+                <div>
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block mb-1">ADX Regime threshold</label>
+                  <input 
+                    type="number" 
+                    value={adxReq} 
+                    onChange={e => {
+                      const val = Math.max(10, Number(e.target.value));
+                      setAdxReq(val);
+                      handleUpdateConfig({ adxThreshold: val });
+                    }}
+                    className="w-full bg-[#111827] border border-[#1e293b] rounded-lg px-3 py-1.5 font-mono text-sm text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block mb-1">News Block Mins</label>
+                  <input 
+                    type="number" 
+                    value={newsMinutes} 
+                    onChange={e => {
+                      const val = Math.max(0, Number(e.target.value));
+                      setNewsMinutes(val);
+                      handleUpdateConfig({ newsProtectionMinutes: val });
+                    }}
+                    className="w-full bg-[#111827] border border-[#1e293b] rounded-lg px-3 py-1.5 font-mono text-sm text-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block mb-1">Max Pullback Dist %</label>
+                  <input 
+                    type="number" 
+                    step="0.01"
+                    value={pullbackMax} 
+                    onChange={e => {
+                      const val = Math.max(0.01, Number(e.target.value));
+                      setPullbackMax(val);
+                      handleUpdateConfig({ pullbackMaxPercent: val });
+                    }}
+                    className="w-full bg-[#111827] border border-[#1e293b] rounded-lg px-3 py-1.5 font-mono text-sm text-white"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Middle Panel: Strategy Gates Integrity & Scoreboard (lg: 5 cols) */}
+        <div className="lg:col-span-5 flex flex-col gap-6">
+          <div className="bg-[#0b0f19] border border-[#141b2d] rounded-2xl p-5 flex flex-col flex-1">
+            
+            {/* Tabs & Title */}
+            <div className="flex items-center justify-between border-b border-[#141b2d] pb-3 mb-4">
+              <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-emerald-400 animate-pulse" />
+                Integrity Checkpoint Matrix
+              </h3>
+              
+              <div className="flex bg-[#111827] p-0.5 rounded-lg border border-[#1e293b]">
+                <button
+                  onClick={() => setActiveStrategyTab('LONG')}
+                  className={`px-3 py-1 rounded text-xs font-bold transition duration-150 ${
+                    activeStrategyTab === 'LONG' 
+                      ? 'bg-emerald-500 text-black' 
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  LONG
+                </button>
+                <button
+                  onClick={() => setActiveStrategyTab('SHORT')}
+                  className={`px-3 py-1 rounded text-xs font-bold transition duration-150 ${
+                    activeStrategyTab === 'SHORT' 
+                      ? 'bg-rose-500 text-white' 
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  SHORT
+                </button>
+              </div>
+            </div>
+
+            {/* Scorecard Progress Header */}
+            <div className="mb-6 bg-[#0e1424] border border-[#141b2d] p-4 rounded-xl">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-gray-400">DECISION SCORE FOR {activeStrategyTab}</span>
+                <span className="font-mono text-lg font-extrabold text-white">
+                  {activeStrategyTab === 'LONG' ? status?.longScore : status?.shortScore} 
+                  <span className="text-xs text-gray-400 font-medium"> / {status?.config.entryScoreThreshold} Required</span>
+                </span>
+              </div>
+              
+              <div className="w-full bg-[#1e293b] h-3 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    activeStrategyTab === 'LONG' 
+                      ? (status && status.longScore >= status.config.entryScoreThreshold ? 'bg-emerald-500' : 'bg-emerald-600/40')
+                      : (status && status.shortScore >= status.config.entryScoreThreshold ? 'bg-rose-500' : 'bg-rose-600/40')
+                  }`}
+                  style={{ width: `${Math.min(100, (((activeStrategyTab === 'LONG' ? status?.longScore : status?.shortScore) || 0) / 115) * 100)}%` }}
+                />
+              </div>
+
+              {/* Pullback condition banner */}
+              <div className="flex items-center justify-between mt-3 pt-2 border-t border-[#141b2d] text-xs">
+                <span className="text-gray-400">Pullback To 1m EMA 21:</span>
+                <span className={`font-mono font-bold ${
+                  (status?.indicators.pullbackDistance || 0) <= (status?.config.pullbackMaxPercent || 0.15) 
+                    ? 'text-emerald-400' 
+                    : 'text-rose-400'
+                }`}>
+                  {status?.indicators.pullbackDistance.toFixed(3)}% 
+                  <span className="text-gray-400 font-normal"> (Max {status?.config.pullbackMaxPercent}%)</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Gates Checklist */}
+            <div className="flex-1 flex flex-col gap-2 overflow-y-auto max-h-[360px] pr-1">
+              {(activeStrategyTab === 'LONG' ? status?.longCheckpoints : status?.shortCheckpoints)?.map((g, idx) => (
+                <div 
+                  key={idx}
+                  className={`flex items-center justify-between p-3 rounded-xl border transition-all duration-150 ${
+                    g.skipped 
+                      ? 'bg-slate-900/30 border-slate-800 text-slate-400' 
+                      : g.met 
+                        ? 'bg-emerald-950/20 border-emerald-500/20 text-emerald-100' 
+                        : 'bg-rose-950/20 border-rose-500/15 text-rose-100'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <button 
+                      onClick={() => handleToggleGate(g.name)}
+                      title={g.skipped ? "Include Gate" : "Skip Gate"}
+                      className={`w-5 h-5 rounded flex items-center justify-center border transition-all ${
+                        g.skipped 
+                          ? 'bg-slate-800 border-slate-700 text-slate-500' 
+                          : g.met 
+                            ? 'bg-emerald-600/20 border-emerald-500 text-emerald-400' 
+                            : 'bg-rose-600/20 border-rose-500 text-rose-400'
+                      }`}
+                    >
+                      {g.skipped ? 'S' : g.met ? '✓' : '✗'}
+                    </button>
+
+                    <div>
+                      <span className="text-xs font-semibold block">{g.name}</span>
+                      <span className="text-[10px] text-gray-400 block font-mono">
+                        {g.value} &nbsp;|&nbsp; Req: {g.required}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <span className="text-xs font-bold block">+{g.weight} pts</span>
+                    {g.skipped && <span className="text-[9px] text-slate-500 uppercase block font-bold">Skipped</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            <p className="text-[10px] text-gray-400 mt-4 text-center">
+              * Click the gate checkbox to toggle **Skip Gate** mode and test pipeline integrity!
+            </p>
+          </div>
+        </div>
+
+        {/* Right Side: Positions, Orders & History (lg: 3 cols) */}
+        <div className="lg:col-span-3 flex flex-col gap-6">
+          
+          {/* Active position card */}
+          <div className="bg-[#0b0f19] border border-[#141b2d] rounded-2xl p-5">
+            <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider mb-4 border-b border-[#141b2d] pb-2">
+              Active Position
+            </h3>
+
+            {activeTrade ? (
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <span className={`px-2.5 py-1 rounded-lg text-xs font-extrabold ${
+                    activeTrade.type === 'LONG' ? 'bg-emerald-500 text-black' : 'bg-rose-500 text-white'
+                  }`}>
+                    {activeTrade.type} {status?.config.leverage}x
+                  </span>
+                  
+                  <span className={`font-mono text-lg font-black ${
+                    activeTrade.pnlPercent >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                  }`}>
+                    {activeTrade.pnlPercent >= 0 ? '+' : ''}{activeTrade.pnlPercent.toFixed(2)}%
+                  </span>
+                </div>
+
+                <div className="space-y-1 bg-[#111827] p-3 rounded-xl font-mono text-xs border border-[#1e293b]">
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Entry Price:</span>
+                    <span className="text-white">${activeTrade.entryPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Current Price:</span>
+                    <span className="text-white">${status?.currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Stop Loss:</span>
+                    <span className="text-rose-400">${activeTrade.stopLoss.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Take Profit:</span>
+                    <span className="text-emerald-400">${activeTrade.takeProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-[#1e293b] pt-1 mt-1 font-bold">
+                    <span className="text-gray-400">Nominal PnL:</span>
+                    <span className={activeTrade.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                      ${activeTrade.pnl.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleManualExit}
+                  className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs py-2 rounded-xl transition duration-150"
+                >
+                  Force Close Position
+                </button>
+              </div>
+            ) : (
+              <div className="text-center py-6">
+                <span className="text-xs text-gray-500 block mb-4">No active position held.</span>
+                
+                <div className="flex gap-2">
                   <button
-                    type="button"
-                    onClick={() => setShowExchangePanel(false)}
-                    className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-500 rounded-lg text-xs font-sans cursor-pointer"
+                    onClick={() => handleManualEntry('LONG')}
+                    className="flex-1 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 font-bold text-xs py-2 rounded-xl transition duration-150"
                   >
-                    Cancel
+                    Force Long
                   </button>
                   <button
-                    type="submit"
-                    disabled={testingConnection}
-                    className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-sans font-medium px-5 py-2.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
-                    id="btn-save-credentials"
+                    onClick={() => handleManualEntry('SHORT')}
+                    className="flex-1 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 border border-rose-500/30 font-bold text-xs py-2 rounded-xl transition duration-150"
                   >
-                    {testingConnection ? "Verifying..." : "Save & Test Connection"}
+                    Force Short
                   </button>
                 </div>
               </div>
-            </form>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ================= CORE PAGE ROUTER CANVAS ================= */}
-      <main className="max-w-7xl mx-auto px-6 py-8" id="main-content-area">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -15 }}
-            transition={{ duration: 0.2 }}
-          >
-            {activeTab === "dashboard" && (
-              <Dashboard
-                status={status}
-                trades={trades}
-                signals={signals}
-                headlines={headlines}
-                logs={logs}
-                onRefresh={fetchAllData}
-              />
             )}
+          </div>
 
-            {activeTab === "analytics" && (
-              <AnalyticsPage
-                summary={analyticsSummary}
-                equityCurve={equityCurve}
-                dailyStats={dailyStats}
-                regimeStats={regimeStats}
-              />
-            )}
+          {/* Past execution logs */}
+          <div className="bg-[#0b0f19] border border-[#141b2d] rounded-2xl p-5 flex-1 flex flex-col max-h-[300px]">
+            <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider mb-3 border-b border-[#141b2d] pb-2">
+              Trade History
+            </h3>
 
-            {activeTab === "trades" && (
-              <TradeHistory
-                trades={trades}
-                isPaperMode={status?.is_paper_trading}
-                onRefresh={fetchAllData}
-                config={config}
-              />
-            )}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              {pastTrades.length > 0 ? (
+                pastTrades.map((t, idx) => (
+                  <div key={idx} className="bg-[#111827] border border-[#1e293b] p-3 rounded-xl text-xs font-mono">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                        t.type === 'LONG' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
+                      }`}>
+                        {t.type} {t.pnlPercent >= 0 ? '🏆' : '💀'}
+                      </span>
+                      <span className={t.pnlPercent >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                        {t.pnlPercent >= 0 ? '+' : ''}{t.pnlPercent.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-gray-400">
+                      In: ${t.entryPrice.toFixed(0)} | Out: ${t.exitPrice?.toFixed(0)}
+                    </div>
+                    <div className="text-[9px] text-gray-500 mt-1 italic truncate">
+                      {t.reason}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center text-gray-500 text-xs py-10">
+                  No trades completed yet.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
 
-            {activeTab === "manual" && (
-              <ManualTradingPage
-                status={status}
-                config={config}
-                onRefresh={fetchAllData}
-              />
-            )}
-
-            {activeTab === "checkpoints" && (
-              <CheckpointsPage
-                status={status}
-                onRefresh={fetchAllData}
-                onTabChange={setActiveTab}
-              />
-            )}
-
-            {activeTab === "config" && config && (
-              <ConfigPage
-                config={config}
-                profiles={profiles}
-                history={configHistory}
-                onRefresh={fetchAllData}
-              />
-            )}
-
-            {activeTab === "api_analyzer" && (
-              <ApiAnalyzer isPaperMode={status?.is_paper_trading} />
-            )}
-          </motion.div>
-        </AnimatePresence>
       </main>
 
-      {/* ================= FOOTER WATERMARK ================= */}
-      <footer className="border-t border-slate-200 py-6 text-center text-[10px] font-mono text-slate-400 uppercase tracking-widest">
-        Bitcoin Futures AI Scalper Bot • Designed with Swiss Precision
+      {/* Footer Area: Headline Injection & Live Engine Logs */}
+      <footer className="border-t border-[#141b2d] bg-[#0b0f19] p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* News & Headline Creator */}
+        <div className="lg:col-span-5 bg-[#0e1424] border border-[#141b2d] p-5 rounded-2xl">
+          <h4 className="text-xs font-bold text-gray-300 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <Newspaper className="w-4 h-4 text-emerald-400" />
+            Headline Sentiment Injector
+          </h4>
+
+          <form onSubmit={handleAddHeadline} className="space-y-3">
+            <div>
+              <input 
+                type="text"
+                placeholder="E.g., Federal Reserve cuts interest rates by 50 basis points"
+                value={newsHeadline}
+                onChange={e => setNewsHeadline(e.target.value)}
+                className="w-full bg-[#111827] border border-[#1e293b] rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div className="flex gap-4 items-center">
+              <div className="flex-1">
+                <label className="text-[9px] text-gray-400 uppercase block mb-1">Impact</label>
+                <select 
+                  value={newsImpact}
+                  onChange={e => setNewsImpact(e.target.value as any)}
+                  className="w-full bg-[#111827] border border-[#1e293b] rounded-xl px-2 py-1.5 text-xs text-white"
+                >
+                  <option value="LOW">LOW (Standard sentiment)</option>
+                  <option value="MEDIUM">MEDIUM</option>
+                  <option value="HIGH">HIGH (Protection Timer lock)</option>
+                </select>
+              </div>
+
+              <div className="w-36">
+                <label className="text-[9px] text-gray-400 uppercase block mb-1">Sentiment: {newsSentiment > 0 ? 'Bullish' : newsSentiment < 0 ? 'Bearish' : 'Neutral'} ({newsSentiment})</label>
+                <input 
+                  type="range"
+                  min="-1"
+                  max="1"
+                  step="0.1"
+                  value={newsSentiment}
+                  onChange={e => setNewsSentiment(Number(e.target.value))}
+                  className="w-full h-1 bg-[#1e293b] rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="self-end bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-xl transition duration-150 flex items-center gap-1.5"
+              >
+                <Plus className="w-4 h-4" /> Inject
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* Live Logs Terminal */}
+        <div className="lg:col-span-7 bg-black/40 border border-[#141b2d] p-4 rounded-2xl flex flex-col h-40">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              Live Engine Terminal Output
+            </span>
+            <button 
+              onClick={fetchStatus}
+              className="text-[10px] text-emerald-400 hover:text-emerald-300 font-bold uppercase tracking-wider flex items-center gap-1"
+            >
+              <RefreshCw className="w-3 h-3" /> Force Poll
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto font-mono text-[10px] text-emerald-400/90 space-y-1">
+            {status?.logs && status.logs.length > 0 ? (
+              status.logs.map((log, idx) => (
+                <div key={idx} className="whitespace-pre-wrap">{log}</div>
+              ))
+            ) : (
+              <div className="text-gray-600">Waiting for live data feed...</div>
+            )}
+            <div ref={logsEndRef} />
+          </div>
+        </div>
+
       </footer>
     </div>
   );
