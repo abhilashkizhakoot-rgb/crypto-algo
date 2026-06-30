@@ -622,7 +622,7 @@ export default function Dashboard({
             <div>
               {(() => {
                 const threshold = status.psi_threshold ?? 0.25;
-                const haltLimit = status.psi_halt_threshold ?? 0.75;
+                const haltLimit = status.psi_halt_threshold ?? 0.50;
                 const isDrifting = (status.psi_max || 0) > threshold;
                 const isHalted = (status.psi_max || 0) > haltLimit;
 

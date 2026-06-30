@@ -37,7 +37,7 @@ export function calculatePSI(
     }
   }
 
-  // Laplace smoothing to handle sparse bins in small sample sizes (e.g., 48 periods)
+  // Laplace smoothing to handle sparse bins in small sample sizes (e.g., 100 periods)
   // This adds a pseudo-count (alpha = 1.0) to each bin to prevent zero-frequency ratio explosions.
   const alpha = 1.0; 
   const actualFrequencies = actualCounts.map(
@@ -64,20 +64,20 @@ export function calculatePSI(
 export const FEATURE_PROFILES = {
   RSI: {
     name: "RSI (14)",
-    // Bin edges: <=30, <=45, <=55, <=70, >70
-    binEdges: [30, 45, 55, 70],
-    expectedFreqs: [0.10, 0.25, 0.30, 0.25, 0.10],
+    // Calibrated bin edges for normal 1m RSI (typically between 35 and 65)
+    binEdges: [40, 47, 53, 60],
+    expectedFreqs: [0.05, 0.25, 0.40, 0.25, 0.05],
   },
   MACD: {
     name: "MACD Spread %",
-    // Bin edges calibrated for BTC trends: <=-1.2%, <=-0.3%, <=0.3%, <=1.2%, >1.2%
-    binEdges: [-1.2, -0.3, 0.3, 1.2],
-    expectedFreqs: [0.15, 0.25, 0.20, 0.25, 0.15],
+    // Calibrated bin edges for 1m EMA 21 vs 50 spread (typically between -0.15% and 0.15%)
+    binEdges: [-0.15, -0.05, 0.05, 0.15],
+    expectedFreqs: [0.05, 0.25, 0.40, 0.25, 0.05],
   },
   VOLATILITY: {
     name: "ATR Volatility Ratio",
-    // Bin edges calibrated for BTC volatility expansions: <=0.6, <=0.9, <=1.3, <=1.8, >1.8
-    binEdges: [0.6, 0.9, 1.3, 1.8],
-    expectedFreqs: [0.15, 0.25, 0.35, 0.15, 0.10],
+    // Calibrated bin edges for ATR expansion/contraction ratios (typically between 0.85 and 1.15)
+    binEdges: [0.80, 0.95, 1.05, 1.20],
+    expectedFreqs: [0.05, 0.25, 0.40, 0.25, 0.05],
   },
 };

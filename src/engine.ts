@@ -36,7 +36,7 @@ class TradingEngine {
   private regimeConfidence: number = 0.5;
   private tickCount: number = 0;
 
-  // Feature Drift Monitoring histories & PSI metrics (last 48 periods)
+  // Feature Drift Monitoring histories & PSI metrics (last 100 periods)
   private rsiHistory: number[] = [];
   private macdSpreadHistory: number[] = [];
   private volatilityHistory: number[] = [];
@@ -49,11 +49,11 @@ class TradingEngine {
     this.rsiHistory = [];
     this.macdSpreadHistory = [];
     this.volatilityHistory = [];
-    // Populate with 48 realistic historical values centered near standard distributions
-    for (let i = 0; i < 48; i++) {
-      this.rsiHistory.push(42 + Math.random() * 16); // Normal range
-      this.macdSpreadHistory.push(-0.2 + Math.random() * 0.4); // Centered near 0
-      this.volatilityHistory.push(0.85 + Math.random() * 0.3); // Centered near 1.0
+    // Populate with 100 realistic historical values centered near standard distributions to stabilize sample sizes
+    for (let i = 0; i < 100; i++) {
+      this.rsiHistory.push(38 + Math.random() * 24); // Spans 38 to 62 to populate bins [40, 47, 53, 60]
+      this.macdSpreadHistory.push(-0.15 + Math.random() * 0.30); // Spans -0.15 to 0.15 to populate bins [-0.15, -0.05, 0.05, 0.15]
+      this.volatilityHistory.push(0.80 + Math.random() * 0.40); // Spans 0.80 to 1.20 to populate bins [0.80, 0.95, 1.05, 1.20]
     }
   }
 
@@ -208,7 +208,7 @@ class TradingEngine {
       psi_volatility: this.psiVolatility,
       psi_max: this.psiMax,
       psi_threshold: config.ml_settings.psi_threshold ?? 0.25,
-      psi_halt_threshold: config.ml_settings.psi_halt_threshold ?? 0.75,
+      psi_halt_threshold: config.ml_settings.psi_halt_threshold ?? 0.50,
       active_ml_model: this.getActiveMLModelName(),
       trade_size_multiplier: this.getTradeSizeMultiplier(),
     };
@@ -626,7 +626,7 @@ class TradingEngine {
     // A strict PSI threshold of 0.25 leads to excessive trading halts.
     // We raise the soft threshold to 0.55 for scalping and make sure it only halts trading if drift is critical (PSI > psiHaltLimit).
     const psiThreshold = config.ml_settings.psi_threshold !== undefined ? config.ml_settings.psi_threshold : 0.55;
-    const psiHaltLimit = config.ml_settings.psi_halt_threshold !== undefined ? config.ml_settings.psi_halt_threshold : 0.75;
+    const psiHaltLimit = config.ml_settings.psi_halt_threshold !== undefined ? config.ml_settings.psi_halt_threshold : 0.50;
     const driftHalted = config.ml_settings.retrain_on_feature_drift && this.psiMax > psiHaltLimit;
     conditions.push({
       name: "Feature Drift Check (PSI)",
@@ -907,14 +907,14 @@ class TradingEngine {
     const longTermAtr = sumAtrLong / lookback;
     const atrExpansionRatio = currentAtr / (longTermAtr || 1);
 
-    // 2. Append to rolling 48-period history arrays
+    // 2. Append to rolling 100-period history arrays
     this.rsiHistory.push(rsiVal);
     this.macdSpreadHistory.push(emaSpreadVal);
     this.volatilityHistory.push(atrExpansionRatio);
 
-    if (this.rsiHistory.length > 48) this.rsiHistory.shift();
-    if (this.macdSpreadHistory.length > 48) this.macdSpreadHistory.shift();
-    if (this.volatilityHistory.length > 48) this.volatilityHistory.shift();
+    if (this.rsiHistory.length > 100) this.rsiHistory.shift();
+    if (this.macdSpreadHistory.length > 100) this.macdSpreadHistory.shift();
+    if (this.volatilityHistory.length > 100) this.volatilityHistory.shift();
 
     // 3. Compute Population Stability Index (PSI)
     try {
@@ -928,7 +928,7 @@ class TradingEngine {
       // Alert on significant drift shift if config is enabled
       const config = dbManager.getConfig();
       const psiThreshold = config.ml_settings.psi_threshold ?? 0.25;
-      const psiHaltLimit = config.ml_settings.psi_halt_threshold ?? 0.75;
+      const psiHaltLimit = config.ml_settings.psi_halt_threshold ?? 0.50;
       if (config.ml_settings.retrain_on_feature_drift && prevPsiMax <= psiThreshold && this.psiMax > psiThreshold) {
         this.log(`🚨 [PSI FEATURE DRIFT WARNING] Population Stability Index (PSI) shifted from ${prevPsiMax.toFixed(2)} to ${this.psiMax.toFixed(2)} (> ${psiThreshold.toFixed(2)} alert limit)! Automatic retraining is queued. Automated entry gates will halt if PSI exceeds the hard limit of ${psiHaltLimit.toFixed(2)}.`);
       }
@@ -1572,7 +1572,7 @@ class TradingEngine {
     // A strict PSI threshold of 0.25 leads to excessive trading halts.
     // We raise the soft threshold to 0.55 for scalping and make sure it only halts trading if drift is critical (PSI > psiHaltLimit).
     const psiThreshold = config.ml_settings.psi_threshold !== undefined ? config.ml_settings.psi_threshold : 0.55;
-    const psiHaltLimit = config.ml_settings.psi_halt_threshold !== undefined ? config.ml_settings.psi_halt_threshold : 0.75;
+    const psiHaltLimit = config.ml_settings.psi_halt_threshold !== undefined ? config.ml_settings.psi_halt_threshold : 0.50;
     const driftHalted = config.ml_settings.retrain_on_feature_drift && this.psiMax > psiHaltLimit;
     conditions.push({
       name: "Feature Drift Check (PSI)",
