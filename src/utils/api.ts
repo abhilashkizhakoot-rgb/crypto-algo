@@ -246,13 +246,7 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
   }
   
   try {
-    // Add credentials: "include" to make sure the browser sends authorization cookies
-    // to bypass Google's Cookie check redirect gateway in sandboxed iframes.
-    const finalInit: RequestInit = {
-      credentials: "include",
-      ...init,
-    };
-    const response = await fetch(finalInput, finalInit);
+    const response = await fetch(finalInput, init);
     // Log content type warning if we expect JSON but get HTML (common when offline fallback triggers)
     const contentType = response.headers.get("content-type") || "";
     if (response.ok && contentType.includes("text/html") && typeof finalInput === "string" && finalInput.includes("/api/")) {

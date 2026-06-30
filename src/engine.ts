@@ -463,64 +463,55 @@ class TradingEngine {
     });
 
     // C2: Market Regime lock
-    // Optimized for 29-minute frequency scalping: RANGE_BOUND is highly favorable for quick mean-reversion trades!
-    // We only block LOW_VOLATILITY because transaction costs and tiny spreads eat up profits during low volatility.
-    const regimeValid = this.currentRegime !== MarketRegime.LOW_VOLATILITY;
+    // Blocked all entries during RANGE_BOUND and LOW_VOLATILITY periods to prevent chop losses.
+    const regimeValid = this.currentRegime !== MarketRegime.LOW_VOLATILITY && this.currentRegime !== MarketRegime.RANGE_BOUND;
     const regimeAligned =
-      (signalDirection === "LONG" && (this.currentRegime === MarketRegime.STRONG_UPTREND || this.currentRegime === MarketRegime.RANGE_BOUND)) ||
-      (signalDirection === "SHORT" && (this.currentRegime === MarketRegime.STRONG_DOWNTREND || this.currentRegime === MarketRegime.RANGE_BOUND)) ||
+      (signalDirection === "LONG" && this.currentRegime === MarketRegime.STRONG_UPTREND) ||
+      (signalDirection === "SHORT" && this.currentRegime === MarketRegime.STRONG_DOWNTREND) ||
       this.currentRegime === MarketRegime.HIGH_VOLATILITY;
 
     conditions.push({
       name: "Market Regime Filter",
       met: regimeValid && regimeAligned,
       current_value: this.currentRegime,
-      required: "STRONG_UPTREND / RANGE_BOUND for LONG, STRONG_DOWNTREND / RANGE_BOUND for SHORT",
+      required: "STRONG_UPTREND for LONG, STRONG_DOWNTREND for SHORT, or HIGH_VOLATILITY",
       description: "Restricts execution during low volatility ranging zones to prevent chop losses.",
       priority: "CRITICAL",
     });
 
     // C3: Trend Alignment (EMA 21 > EMA 50)
-    // Optimized for 29-minute frequency scalping:
-    // Trend alignment (EMA 21 vs EMA 50) is critical for trend following, but during RANGE_BOUND or HIGH_VOLATILITY regimes,
-    // we expect price to revert to the mean, so we allow trading regardless of EMA 21/50 crosses to maintain frequency.
+    // Demanded strict EMA 21/50 alignment across all environments
     const trendAligned =
-      this.currentRegime === MarketRegime.RANGE_BOUND ||
-      this.currentRegime === MarketRegime.HIGH_VOLATILITY ||
       (signalDirection === "LONG" && isBullTrend1m) ||
       (signalDirection === "SHORT" && isBearTrend1m);
     conditions.push({
       name: "Exponential Trend Alignment",
       met: trendAligned,
       current_value: isBullTrend1m ? "BULLISH" : "BEARISH",
-      required: "Required in Strong Trends (Disabled in RANGE_BOUND / HIGH_VOLATILITY)",
+      required: "LONG: BULLISH (EMA21 > EMA50), SHORT: BEARISH (EMA21 < EMA50)",
       description: "Confirms overall trend line support across 1-minute candlesticks.",
       priority: "HIGH",
     });
 
     // C4: Sentiment score alignment
-    // Optimized for 29-minute frequency scalping:
-    // Strict sentiment alignment can block many short-term technical setups.
-    // We relax this to prevent trade starvation, blocking ONLY if news sentiment is extremely contradictory (hostile).
-    const sentBlocked =
-      (signalDirection === "LONG" && avgSentiment < -0.45) ||
-      (signalDirection === "SHORT" && avgSentiment > 0.45);
-    const sentAligned = !sentBlocked;
+    // Strict sentiment alignment requires genuine positive sentiment for LONG and negative sentiment for SHORT to guarantee quality.
+    const sentAligned =
+      (signalDirection === "LONG" && avgSentiment >= 0.10) ||
+      (signalDirection === "SHORT" && avgSentiment <= -0.10) ||
+      signalDirection === "NEUTRAL";
 
     conditions.push({
       name: "Sentiment Engine Alignment",
       met: sentAligned,
       current_value: `${avgSentiment.toFixed(2)}`,
-      required: "LONG: >= -0.45, SHORT: <= 0.45",
-      description: "Softened sentiment lock for scalping. Only blocks if actively contradictory.",
+      required: "LONG: >= 0.10, SHORT: <= -0.10",
+      description: "Demands strict sentiment support to filter out trades fighting news/market sentiment.",
       priority: "HIGH",
     });
 
     // C5: Relative Volume Confirmation (Simulated/Calculated ratio)
-    // Optimized for 29-minute frequency scalping:
-    // While breakout trades require high volume (> 1.3x), mean-reversion trades in RANGE_BOUND can be placed with normal volume.
-    // Therefore, we reduce the volume threshold to 1.05x in RANGE_BOUND mode, while keeping it at relVolThreshold for trending moves.
-    const requiredRelVol = this.currentRegime === MarketRegime.RANGE_BOUND ? 1.05 : relVolThreshold;
+    // Mandated standard breakout volume ratios across the board.
+    const requiredRelVol = relVolThreshold;
     conditions.push({
       name: "Relative Volume Confirmation",
       met: relVolume > requiredRelVol,
@@ -556,18 +547,14 @@ class TradingEngine {
     });
 
     // C8: ADX Trend Strength Filter
-    // Optimized for 29-minute frequency scalping:
-    // ADX measures trend strength. In a STRONG trend, we want ADX > threshold to confirm momentum.
-    // In a RANGE_BOUND market, we actually want ADX <= 25.0 to ensure the market is consolidating and boundaries hold.
-    const adxMet = this.currentRegime === MarketRegime.RANGE_BOUND
-      ? adxValue <= 25.0
-      : adxValue > adxThreshold;
+    // Strictly required a high establishing trend (ADX > 22).
+    const adxMet = adxValue > adxThreshold;
 
     conditions.push({
       name: "ADX Trend Strength Filter",
       met: adxMet,
       current_value: `${adxValue.toFixed(1)}`,
-      required: this.currentRegime === MarketRegime.RANGE_BOUND ? "ADX(14) <= 25.0 (Range Hold)" : `ADX(14) > ${adxThreshold} (Trend Strength)`,
+      required: `ADX(14) > ${adxThreshold} (Trend Strength)`,
       description: "Confirms trend presence or consolidations based on active regime classification.",
       priority: "MEDIUM",
     });
@@ -621,12 +608,9 @@ class TradingEngine {
     });
 
     // C13: Active Feature Drift Monitoring (PSI)
-    // Optimized for 29-minute frequency scalping:
-    // Bitcoin markets are volatile and exhibit high feature distribution drift (high PSI) regularly.
-    // A strict PSI threshold of 0.25 leads to excessive trading halts.
-    // We raise the soft threshold to 0.55 for scalping and make sure it only halts trading if drift is critical (PSI > psiHaltLimit).
-    const psiThreshold = config.ml_settings.psi_threshold !== undefined ? config.ml_settings.psi_threshold : 0.55;
-    const psiHaltLimit = config.ml_settings.psi_halt_threshold !== undefined ? config.ml_settings.psi_halt_threshold : 0.50;
+    // Reverted to strict validation of statistical feature drift to avoid trading under regime drift.
+    const psiThreshold = config.ml_settings.psi_threshold !== undefined ? config.ml_settings.psi_threshold : 0.25;
+    const psiHaltLimit = config.ml_settings.psi_halt_threshold !== undefined ? config.ml_settings.psi_halt_threshold : 0.25;
     const driftHalted = config.ml_settings.retrain_on_feature_drift && this.psiMax > psiHaltLimit;
     conditions.push({
       name: "Feature Drift Check (PSI)",
@@ -1432,58 +1416,49 @@ class TradingEngine {
     });
 
     // C2: Market Regime lock
-    // Optimized for 29-minute frequency scalping: RANGE_BOUND is highly favorable for quick mean-reversion trades!
-    // We only block LOW_VOLATILITY because transaction costs and tiny spreads eat up profits during low volatility.
-    const regimeValid = this.currentRegime !== MarketRegime.LOW_VOLATILITY;
+    // Blocked all entries during RANGE_BOUND and LOW_VOLATILITY periods to prevent chop losses.
+    const regimeValid = this.currentRegime !== MarketRegime.LOW_VOLATILITY && this.currentRegime !== MarketRegime.RANGE_BOUND;
     const regimeAligned =
-      (signalDirection === "LONG" && (this.currentRegime === MarketRegime.STRONG_UPTREND || this.currentRegime === MarketRegime.RANGE_BOUND)) ||
-      (signalDirection === "SHORT" && (this.currentRegime === MarketRegime.STRONG_DOWNTREND || this.currentRegime === MarketRegime.RANGE_BOUND)) ||
+      (signalDirection === "LONG" && this.currentRegime === MarketRegime.STRONG_UPTREND) ||
+      (signalDirection === "SHORT" && this.currentRegime === MarketRegime.STRONG_DOWNTREND) ||
       this.currentRegime === MarketRegime.HIGH_VOLATILITY;
 
     conditions.push({
       name: "Market Regime Filter",
       met: regimeValid && regimeAligned,
       current_value: this.currentRegime,
-      required: "STRONG_UPTREND / RANGE_BOUND for LONG, STRONG_DOWNTREND / RANGE_BOUND for SHORT",
+      required: "STRONG_UPTREND for LONG, STRONG_DOWNTREND for SHORT, or HIGH_VOLATILITY",
     });
 
     // C3: Trend Alignment (EMA 21 > EMA 50)
-    // Optimized for 29-minute frequency scalping:
-    // Trend alignment (EMA 21 vs EMA 50) is critical for trend following, but during RANGE_BOUND or HIGH_VOLATILITY regimes,
-    // we expect price to revert to the mean, so we allow trading regardless of EMA 21/50 crosses to maintain frequency.
+    // Demanded strict EMA 21/50 alignment across all environments
     const trendAligned =
-      this.currentRegime === MarketRegime.RANGE_BOUND ||
-      this.currentRegime === MarketRegime.HIGH_VOLATILITY ||
       (signalDirection === "LONG" && isBullTrend1m) ||
       (signalDirection === "SHORT" && isBearTrend1m);
     conditions.push({
       name: "Trend Alignment (EMA 21/50)",
       met: trendAligned,
       current_value: isBullTrend1m ? "BULLISH" : "BEARISH",
-      required: "Required in Strong Trends (Disabled in RANGE_BOUND / HIGH_VOLATILITY)",
+      required: "LONG: BULLISH (EMA21 > EMA50), SHORT: BEARISH (EMA21 < EMA50)",
     });
 
     // C4: Sentiment score alignment
-    // Optimized for 29-minute frequency scalping:
-    // Strict sentiment alignment can block many short-term technical setups.
-    // We relax this to prevent trade starvation, blocking ONLY if news sentiment is extremely contradictory (hostile).
-    const sentBlocked =
-      (signalDirection === "LONG" && avgSentiment < -0.45) ||
-      (signalDirection === "SHORT" && avgSentiment > 0.45);
-    const sentAligned = !sentBlocked;
+    // Strict sentiment alignment requires genuine positive sentiment for LONG and negative sentiment for SHORT to guarantee quality.
+    const sentAligned =
+      (signalDirection === "LONG" && avgSentiment >= 0.10) ||
+      (signalDirection === "SHORT" && avgSentiment <= -0.10) ||
+      signalDirection === "NEUTRAL";
 
     conditions.push({
       name: "Sentiment Engine Alignment",
       met: sentAligned,
       current_value: `${avgSentiment.toFixed(2)}`,
-      required: "LONG: >= -0.45, SHORT: <= 0.45",
+      required: "LONG: >= 0.10, SHORT: <= -0.10",
     });
 
     // C5: Relative Volume Confirmation (Real ratio computed from volume average)
-    // Optimized for 29-minute frequency scalping:
-    // While breakout trades require high volume (> 1.3x), mean-reversion trades in RANGE_BOUND can be placed with normal volume.
-    // Therefore, we reduce the volume threshold to 1.05x in RANGE_BOUND mode, while keeping it at relVolThreshold for trending moves.
-    const requiredRelVol = this.currentRegime === MarketRegime.RANGE_BOUND ? 1.05 : relVolThreshold;
+    // Mandated standard breakout volume ratios across the board.
+    const requiredRelVol = relVolThreshold;
     conditions.push({
       name: "Relative Volume Confirmation",
       met: relVolume > requiredRelVol,
@@ -1512,18 +1487,14 @@ class TradingEngine {
     });
 
     // C8: ADX Trend Strength Filter (Real ADX computed from market candles)
-    // Optimized for 29-minute frequency scalping:
-    // ADX measures trend strength. In a STRONG trend, we want ADX > threshold to confirm momentum.
-    // In a RANGE_BOUND market, we actually want ADX <= 25.0 to ensure the market is consolidating and boundaries hold.
-    const adxMet = this.currentRegime === MarketRegime.RANGE_BOUND
-      ? adxValue <= 25.0
-      : adxValue > adxThreshold;
+    // Strictly required a high establishing trend (ADX > 22).
+    const adxMet = adxValue > adxThreshold;
 
     conditions.push({
       name: "ADX Trend Strength Filter",
       met: adxMet,
       current_value: `${adxValue.toFixed(1)}`,
-      required: this.currentRegime === MarketRegime.RANGE_BOUND ? "ADX(14) <= 25.0 (Range Hold)" : `ADX(14) > ${adxThreshold} (Trend Strength)`,
+      required: `ADX(14) > ${adxThreshold} (Trend Strength)`,
     });
 
     // C9: Minimum Account Equity Check
@@ -1567,12 +1538,9 @@ class TradingEngine {
     });
 
     // C13: Active Feature Drift Monitoring (PSI)
-    // Optimized for 29-minute frequency scalping:
-    // Bitcoin markets are volatile and exhibit high feature distribution drift (high PSI) regularly.
-    // A strict PSI threshold of 0.25 leads to excessive trading halts.
-    // We raise the soft threshold to 0.55 for scalping and make sure it only halts trading if drift is critical (PSI > psiHaltLimit).
-    const psiThreshold = config.ml_settings.psi_threshold !== undefined ? config.ml_settings.psi_threshold : 0.55;
-    const psiHaltLimit = config.ml_settings.psi_halt_threshold !== undefined ? config.ml_settings.psi_halt_threshold : 0.50;
+    // Reverted to strict validation of statistical feature drift to avoid trading under regime drift.
+    const psiThreshold = config.ml_settings.psi_threshold !== undefined ? config.ml_settings.psi_threshold : 0.25;
+    const psiHaltLimit = config.ml_settings.psi_halt_threshold !== undefined ? config.ml_settings.psi_halt_threshold : 0.25;
     const driftHalted = config.ml_settings.retrain_on_feature_drift && this.psiMax > psiHaltLimit;
     conditions.push({
       name: "Feature Drift Check (PSI)",
