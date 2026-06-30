@@ -13,17 +13,7 @@ import { tradingEngine } from "./src/engine.js";
 import { ConnectionStatus } from "./src/types.js";
 
 function getRequestBaseUrl(req: express.Request): string {
-  // 1. Scan all environment variables first for any .run.app URL
-  for (const [key, value] of Object.entries(process.env)) {
-    if (typeof value === "string") {
-      const match = value.match(/(https?:\/\/[a-zA-Z0-9.-]+\.run\.app)/i);
-      if (match) {
-        return match[1];
-      }
-    }
-  }
-
-  // 2. Try to extract from origin or referer headers (highly reliable under proxies/sandboxes)
+  // 1. Try to extract from origin or referer headers (highly reliable under proxies/sandboxes)
   const originHeader = req.headers["origin"];
   if (originHeader && typeof originHeader === "string" && originHeader.startsWith("http") && originHeader.includes(".run.app")) {
     return originHeader;
@@ -39,7 +29,7 @@ function getRequestBaseUrl(req: express.Request): string {
     } catch (e) {}
   }
 
-  // 3. Scan all request headers for any .run.app domain
+  // 2. Scan all request headers for any .run.app domain
   for (const [key, value] of Object.entries(req.headers)) {
     if (typeof value === "string") {
       const match = value.match(/([a-zA-Z0-9.-]+\.run\.app)/i);
@@ -76,6 +66,30 @@ function getRequestBaseUrl(req: express.Request): string {
     proto = "https";
   }
   
+  if (host && !host.includes("localhost") && !host.includes("127.0.0.1") && !host.includes("0.0.0.0")) {
+    return `${proto}://${host}`;
+  }
+
+  // 3. Scan all environment variables last as a fallback if headers are not available or local
+  for (const [key, value] of Object.entries(process.env)) {
+    if (typeof value === "string" && key !== "SHARED_URL" && key !== "DEV_URL") { // Skip generic cross URLs if possible
+      const match = value.match(/(https?:\/\/[a-zA-Z0-9.-]+\.run\.app)/i);
+      if (match) {
+        return match[1];
+      }
+    }
+  }
+
+  // Last fallback to whatever .run.app URL is found in env if no headers or other keys matched
+  for (const [key, value] of Object.entries(process.env)) {
+    if (typeof value === "string") {
+      const match = value.match(/(https?:\/\/[a-zA-Z0-9.-]+\.run\.app)/i);
+      if (match) {
+        return match[1];
+      }
+    }
+  }
+
   return host ? `${proto}://${host}` : "";
 }
 
