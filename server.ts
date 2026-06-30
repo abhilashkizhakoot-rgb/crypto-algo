@@ -5,8 +5,9 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import { TradingEngine } from './src/engine';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const resolvedDirname = typeof __dirname !== 'undefined'
+  ? __dirname
+  : path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 const port = 3000;
@@ -95,11 +96,11 @@ app.post('/api/stop', (req, res) => {
 });
 
 // Serve static build from dist folder
-app.use(express.static(path.join(__dirname, 'dist')));
+app.use(express.static(path.join(resolvedDirname, 'dist')));
 
 // SPA fallback
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  res.sendFile(path.join(resolvedDirname, 'dist', 'index.html'));
 });
 
 const server = createServer(app);
