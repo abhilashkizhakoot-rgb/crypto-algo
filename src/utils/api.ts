@@ -2,6 +2,19 @@
  * Helper to determine the API Base URL in sandboxed / iframe environments
  */
 export function getApiBaseUrl(): string {
+  const url = getRawApiBaseUrl();
+  let processed = url;
+  if (url && url.includes(".run.app") && url.startsWith("http://")) {
+    processed = url.replace(/^http:\/\//i, "https://");
+    console.debug(`[getApiBaseUrl] Upgraded insecure Cloud Run base URL: "${url}" -> "${processed}"`);
+  }
+  if (processed && processed.endsWith("/")) {
+    processed = processed.slice(0, -1);
+  }
+  return processed;
+}
+
+function getRawApiBaseUrl(): string {
   // 0. Use server-injected base URL if present (extremely reliable under iframe sandboxing)
   if (typeof window !== "undefined" && (window as any).__API_BASE_URL__) {
     const injected = (window as any).__API_BASE_URL__;
@@ -231,12 +244,14 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
   let finalInput = input;
   
   if (typeof input === "string" && input.startsWith("/api/")) {
-    finalInput = (baseUrl && baseUrl.startsWith("http")) ? `${baseUrl}${input}` : input;
+    const cleanBase = (baseUrl && baseUrl.endsWith("/")) ? baseUrl.slice(0, -1) : baseUrl;
+    finalInput = (cleanBase && cleanBase.startsWith("http")) ? `${cleanBase}${input}` : input;
     console.debug(`[apiFetch] String path resolved: "${input}" -> "${finalInput}" (baseUrl: "${baseUrl}")`);
   } else if (input instanceof URL && input.pathname.startsWith("/api/")) {
     if (baseUrl && baseUrl.startsWith("http") && (input.origin === window.location.origin || input.origin === "null")) {
       try {
-        const updatedUrl = new URL(input.pathname + input.search + input.hash, baseUrl);
+        const cleanBase = (baseUrl && baseUrl.endsWith("/")) ? baseUrl.slice(0, -1) : baseUrl;
+        const updatedUrl = new URL(input.pathname + input.search + input.hash, cleanBase);
         finalInput = updatedUrl;
         console.debug(`[apiFetch] URL object resolved: "${input.href}" -> "${finalInput.href}"`);
       } catch (e) {

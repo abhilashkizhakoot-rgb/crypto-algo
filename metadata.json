@@ -1,8 +1,6 @@
 {
-  "name": "Delta Algorithmic Trading Bot",
-  "description": "A high-performance algorithmic cryptocurrency trading bot dashboard with real-time indicators, news headline sentiment analysis, pullback checks, and gate skipping configuration.",
+  "name": "Bitcoin Futures 29-Minute AI Scalping Bot",
+  "description": "CatBoost + FinBERT + Multi-Timeframe Regime Detection scalping simulator and dashboard for Delta Exchange BTC futures.",
   "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
