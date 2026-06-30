@@ -99,7 +99,7 @@ app.post('/api/stop', (req, res) => {
 app.use(express.static(path.join(resolvedDirname, 'dist')));
 
 // SPA fallback
-app.get('*', (req, res) => {
+app.get('*all', (req, res) => {
   res.sendFile(path.join(resolvedDirname, 'dist', 'index.html'));
 });
 
