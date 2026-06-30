@@ -130,6 +130,20 @@ const CustomTooltip = ({ active, payload, label }: any) => {
               <span className="text-slate-400">EMA 50:</span>{" "}
               <span className="font-mono text-amber-600">${safeFormatNumber(data.ema50)}</span>
             </div>
+            {data.vwap !== undefined && (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">VWAP:</span>{" "}
+                  <span className="font-mono text-violet-600">${safeFormatNumber(data.vwap)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">VWAP Bands:</span>{" "}
+                  <span className="font-mono text-rose-500 text-[10px]">
+                    [${safeFormatNumber(data.vwap_lower)}, ${safeFormatNumber(data.vwap_upper)}]
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -233,6 +247,9 @@ export default function Dashboard({
             time: formattedTime,
             ema21: Number(currentEma21.toFixed(2)),
             ema50: Number(currentEma50.toFixed(2)),
+            vwap: p.vwap !== undefined ? Number(p.vwap.toFixed(2)) : undefined,
+            vwap_upper: p.vwap_upper !== undefined ? Number(p.vwap_upper.toFixed(2)) : undefined,
+            vwap_lower: p.vwap_lower !== undefined ? Number(p.vwap_lower.toFixed(2)) : undefined,
             candlestickRange: [minOC, maxOC]
           };
         });
@@ -523,7 +540,13 @@ export default function Dashboard({
                   <span className="w-2.5 h-0.5 bg-blue-500" /> EMA 21
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="w-2.5 h-0.5 bg-amber-500 animate-pulse" /> EMA 50
+                  <span className="w-2.5 h-0.5 bg-amber-500" /> EMA 50
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2.5 h-0.5 bg-violet-500" /> VWAP
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2.5 h-0.5 bg-rose-400" /> VWAP Bands
                 </span>
               </div>
             </div>
@@ -554,6 +577,11 @@ export default function Dashboard({
                   {/* EMA overlays */}
                   <Line type="monotone" dataKey="ema21" stroke="#3b82f6" strokeWidth={1.5} dot={false} strokeDasharray="3 3" />
                   <Line type="monotone" dataKey="ema50" stroke="#f59e0b" strokeWidth={1.5} dot={false} strokeDasharray="4 4" />
+
+                  {/* VWAP overlays */}
+                  <Line type="monotone" dataKey="vwap" stroke="#8b5cf6" strokeWidth={1.5} dot={false} strokeDasharray="5 5" />
+                  <Line type="monotone" dataKey="vwap_upper" stroke="#f43f5e" strokeWidth={1} dot={false} strokeDasharray="2 2" />
+                  <Line type="monotone" dataKey="vwap_lower" stroke="#f43f5e" strokeWidth={1} dot={false} strokeDasharray="2 2" />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>

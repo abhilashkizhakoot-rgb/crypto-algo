@@ -246,6 +246,9 @@ export interface Candlestick {
   low: number;
   close: number;
   volume: number;
+  vwap?: number;
+  vwap_upper?: number;
+  vwap_lower?: number;
 }
 
 export interface ApiCallLog {

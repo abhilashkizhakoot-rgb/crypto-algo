@@ -413,6 +413,14 @@ class TradingEngine {
     const avgSentiment = this.calculateAverageSentiment(headlines);
 
     const currentPrice = this.currentPrice;
+
+    // Ensure VWAP is computed
+    this.calculateVWAP(this.candles1m);
+    const lastCandle = hasEnoughData ? this.candles1m[lastIdx] : null;
+    const vwapVal = lastCandle && lastCandle.vwap !== undefined ? lastCandle.vwap : this.currentPrice;
+    const vwapUpperVal = lastCandle && lastCandle.vwap_upper !== undefined ? lastCandle.vwap_upper : this.currentPrice * 1.01;
+    const vwapLowerVal = lastCandle && lastCandle.vwap_lower !== undefined ? lastCandle.vwap_lower : this.currentPrice * 0.99;
+
     const currentRsi = rsi14[lastIdx] !== undefined ? rsi14[lastIdx] : 50;
     const bb = this.calculateBollingerBands(closes, 20, 2);
 
@@ -619,6 +627,26 @@ class TradingEngine {
       required: `Max PSI <= ${psiHaltLimit.toFixed(2)} (Halt limit)`,
       description: `Measures statistical divergence (Population Stability Index). Configurable trading halt threshold: ${psiHaltLimit.toFixed(2)}.`,
       priority: "HIGH",
+    });
+
+    // C14: VWAP Deviation Anchor Check
+    const vwapDevMet = signalDirection === "LONG"
+      ? currentPrice <= vwapUpperVal
+      : signalDirection === "SHORT"
+        ? currentPrice >= vwapLowerVal
+        : true;
+
+    conditions.push({
+      name: "VWAP Deviation Anchor",
+      met: vwapDevMet,
+      current_value: `Price: $${currentPrice.toFixed(2)} (VWAP: $${vwapVal.toFixed(2)})`,
+      required: signalDirection === "LONG"
+        ? `Price <= Upper Band ($${vwapUpperVal.toFixed(2)})`
+        : signalDirection === "SHORT"
+          ? `Price >= Lower Band ($${vwapLowerVal.toFixed(2)})`
+          : "Price within VWAP Standard Deviation bands",
+      description: "Guards against entering trades when price is extremely overextended (above upper band for LONG, or below lower band for SHORT).",
+      priority: "CRITICAL",
     });
 
     // Apply bypassed/skipped gates
@@ -873,6 +901,9 @@ class TradingEngine {
     // Calculate Layer 1: Market Regime
     this.detectMarketRegime();
 
+    // Calculate VWAP and its Deviation Bands
+    this.calculateVWAP(this.candles1m);
+
     // 1. Compute current feature values
     const rsi14 = this.calculateRSI(closes, 14);
     const rsiVal = rsi14[closes.length - 1] !== undefined ? rsi14[closes.length - 1] : 50;
@@ -1093,6 +1124,34 @@ class TradingEngine {
       upper: mean + multiplier * stdDev,
       lower: mean - multiplier * stdDev
     };
+  }
+
+  // Volume Weighted Average Price (VWAP) and its standard deviation bands
+  private calculateVWAP(candles: Candlestick[], multiplier = 1.5) {
+    if (candles.length === 0) return;
+    let cumPV = 0;
+    let cumVol = 0;
+
+    for (let i = 0; i < candles.length; i++) {
+      const c = candles[i];
+      const tp = (c.high + c.low + c.close) / 3;
+      cumPV += tp * c.volume;
+      cumVol += c.volume;
+
+      const currentVwap = cumVol > 0 ? cumPV / cumVol : tp;
+      c.vwap = currentVwap;
+
+      // Compute weighted standard deviation around the current VWAP anchor
+      let weightedVarianceSum = 0;
+      for (let j = 0; j <= i; j++) {
+        const c_j = candles[j];
+        const tp_j = (c_j.high + c_j.low + c_j.close) / 3;
+        weightedVarianceSum += c_j.volume * Math.pow(tp_j - currentVwap, 2);
+      }
+      const stdDev = cumVol > 0 ? Math.sqrt(weightedVarianceSum / cumVol) : 0;
+      c.vwap_upper = currentVwap + multiplier * stdDev;
+      c.vwap_lower = currentVwap - multiplier * stdDev;
+    }
   }
 
   // Layer 1: Market Regime Detection
@@ -1402,6 +1461,13 @@ class TradingEngine {
       signalDirection = "SHORT";
     }
 
+    // Ensure VWAP is computed
+    this.calculateVWAP(this.candles1m);
+    const lastCandle = this.candles1m[lastIdx];
+    const vwapVal = lastCandle.vwap !== undefined ? lastCandle.vwap : currentClose;
+    const vwapUpperVal = lastCandle.vwap_upper !== undefined ? lastCandle.vwap_upper : currentClose * 1.01;
+    const vwapLowerVal = lastCandle.vwap_lower !== undefined ? lastCandle.vwap_lower : currentClose * 0.99;
+
     // 2. Conditions Check (Strict 10-Conditions Checklist)
     const conditions: { name: string; met: boolean; current_value: any; required: string }[] = [];
 
@@ -1547,6 +1613,24 @@ class TradingEngine {
       met: !driftHalted,
       current_value: `PSI = ${this.psiMax.toFixed(3)} (${this.psiMax > psiHaltLimit ? "DRIFT CRITICAL" : "STABLE/ACCEPTABLE"})`,
       required: `Max PSI <= ${psiHaltLimit.toFixed(2)} (Halt limit)`,
+    });
+
+    // C14: VWAP Deviation Anchor Check
+    const vwapDevMet = signalDirection === "LONG"
+      ? currentClose <= vwapUpperVal
+      : signalDirection === "SHORT"
+        ? currentClose >= vwapLowerVal
+        : true;
+
+    conditions.push({
+      name: "VWAP Deviation Anchor",
+      met: vwapDevMet,
+      current_value: `Price: $${currentClose.toFixed(2)} (VWAP: $${vwapVal.toFixed(2)})`,
+      required: signalDirection === "LONG"
+        ? `Price <= Upper Band ($${vwapUpperVal.toFixed(2)})`
+        : signalDirection === "SHORT"
+          ? `Price >= Lower Band ($${vwapLowerVal.toFixed(2)})`
+          : "Price within VWAP Standard Deviation bands",
     });
 
     // Apply bypassed/skipped gates
