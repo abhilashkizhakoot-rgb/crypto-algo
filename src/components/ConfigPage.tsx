@@ -822,15 +822,7 @@ export default function ConfigPage({
                   <span>Retrain on Strategy Performance Drop ({">"}10% win-rate variance)</span>
                 </label>
 
-                <label className="flex items-center gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={mlConfig.retrain_on_feature_drift}
-                    onChange={(e) => setMlConfig({ ...mlConfig, retrain_on_feature_drift: e.target.checked })}
-                    className="rounded border-slate-300 bg-white text-indigo-600 focus:ring-indigo-400"
-                  />
-                  <span>Retrain on Feature Drift Alerts</span>
-                </label>
+
               </div>
             </div>
 

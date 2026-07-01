@@ -653,8 +653,6 @@ class TradingEngine {
       priority: "HIGH",
     });
 
-    // C13: Active Feature Drift Monitoring (PSI) has been removed
-
     // C14: VWAP Deviation Anchor Check
     const vwapDevMet = signalDirection === "LONG"
       ? currentPrice <= vwapUpperVal
@@ -1784,8 +1782,6 @@ class TradingEngine {
       current_value: timingStatus.status,
       required: "Avoid weekends & 2:00 AM - 8:00 AM IST",
     });
-
-    // C13: Active Feature Drift Monitoring (PSI) has been removed
 
     // C14: VWAP Deviation Anchor Check
     const vwapDevMet = signalDirection === "LONG"

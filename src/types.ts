@@ -182,7 +182,6 @@ export interface StrategyConfig {
     validation_auc: number;
     auto_retrain_weekly: boolean;
     retrain_on_perf_drop: boolean;
-    retrain_on_feature_drift: boolean;
   };
   sentiment_settings: {
     entry_threshold_long: number; // e.g. 0.25
