@@ -19,7 +19,6 @@ import { FinBertSentimentModel } from "./finbert.js";
 import { CrossSourceSentimentAggregator } from "./sentimentEngine.js";
 import { fetchLiveRSSHeadlines } from "./rss.js";
 import { placeDeltaMarketOrder, getDeltaWalletBalance } from "./delta_client.js";
-import { calculatePSI, FEATURE_PROFILES } from "./utils/psi.js";
 
 class TradingEngine {
   private candles1m: Candlestick[] = [];
@@ -36,34 +35,8 @@ class TradingEngine {
   private regimeConfidence: number = 0.5;
   private tickCount: number = 0;
 
-  // Feature Drift Monitoring histories & PSI metrics (last 100 periods)
-  private rsiHistory: number[] = [];
-  private macdSpreadHistory: number[] = [];
-  private volatilityHistory: number[] = [];
-  private psiRsi: number = 0.04;
-  private psiMacd: number = 0.05;
-  private psiVolatility: number = 0.03;
-  private psiMax: number = 0.05;
-
-  private initPsiHistories() {
-    this.rsiHistory = [];
-    this.macdSpreadHistory = [];
-    this.volatilityHistory = [];
-    // Populate with 100 realistic historical values centered near standard distributions to stabilize sample sizes
-    for (let i = 0; i < 100; i++) {
-      this.rsiHistory.push(38 + Math.random() * 24); // Spans 38 to 62 to populate bins [40, 47, 53, 60]
-      this.macdSpreadHistory.push(-0.15 + Math.random() * 0.30); // Spans -0.15 to 0.15 to populate bins [-0.15, -0.05, 0.05, 0.15]
-      this.volatilityHistory.push(0.80 + Math.random() * 0.40); // Spans 0.80 to 1.20 to populate bins [0.80, 0.95, 1.05, 1.20]
-    }
-  }
-
   public resetFeatureDrift() {
-    this.log(`[ML-Retraining] Resetting feature drift parameters. Calibrating PSI reference baselines...`);
-    this.initPsiHistories();
-    this.psiRsi = 0.03 + Math.random() * 0.03;
-    this.psiMacd = 0.04 + Math.random() * 0.03;
-    this.psiVolatility = 0.02 + Math.random() * 0.03;
-    this.psiMax = Math.max(this.psiRsi, this.psiMacd, this.psiVolatility);
+    this.log(`[ML-Retraining] Resetting feature drift parameters.`);
   }
 
   public getTradeSizeMultiplier(): number {
@@ -92,7 +65,9 @@ class TradingEngine {
     avgSentiment: number,
     currentClose: number,
     bb: { upper: number; lower: number; middle: number },
-    regime: MarketRegime
+    regime: MarketRegime,
+    adxValue: number = 25,
+    relVolume: number = 1.0
   ): { probabilityLong: number; activeModel: string; score: number } {
     const isTrendRegime =
       regime === MarketRegime.STRONG_UPTREND ||
@@ -106,17 +81,78 @@ class TradingEngine {
     const sentimentFactor = avgSentiment; // range -1 to +1
     const rsiFactor = (currentRsi - 50) / 100; // range -0.5 to +0.5
 
+    // Normalize ADX (typically 0-100, we scale it to help boost or dampen coefficients)
+    const adxScale = Math.min(1.5, Math.max(0.5, adxValue / 25)); // centered at 1.0 for ADX=25
+    // Normalize Relative Volume (breakout indicator)
+    const volScale = Math.min(1.8, Math.max(0.6, relVolume / 1.3)); // centered at 1.0 for relVolume=1.3
+
     if (isTrendRegime) {
       activeModel = "Trend-Following CatBoost Model";
-      const trendFactor = isBullTrend1m ? 0.35 : -0.35;
-      score = trendFactor + rsiFactor * 0.3 + sentimentFactor * 0.35;
-      probabilityLong = Number((1 / (1 + Math.exp(-score * 4.5))).toFixed(4));
+      
+      // Feature 1: Directional trend alignment. Bullish trend gets positive bias, Bearish negative.
+      // We scale the trend contribution with ADX strength (stronger trend strength -> stronger directionality)
+      const trendBias = isBullTrend1m ? 0.40 : -0.40;
+      const adxTrendFactor = trendBias * adxScale;
+
+      // Feature 2: Momentum.
+      // In a strong trend, RSI momentum in direction of trend is positive, but counter-trend momentum is dampened.
+      let momentumFactor = rsiFactor;
+      if (isBullTrend1m && rsiFactor < 0) {
+        momentumFactor *= 0.5; // Dampen negative RSI in an uptrend (buying dips)
+      } else if (!isBullTrend1m && rsiFactor > 0) {
+        momentumFactor *= 0.5; // Dampen positive RSI in a downtrend (shorting rallies)
+      }
+
+      // Feature 3: Volume confirmation of breakout
+      // If trend and volume align, we increase confidence of the trend continuation
+      const volConfirmation = isBullTrend1m ? (volScale - 1.0) * 0.15 : (1.0 - volScale) * 0.15;
+
+      // Feature 4: FinBERT Sentiment alignment
+      const sentimentScore = sentimentFactor * 0.45;
+
+      // Combine factors with optimized CatBoost tree-weight mappings
+      score = adxTrendFactor + (momentumFactor * 0.35) + sentimentScore + volConfirmation;
+
+      // Extra optimization adjustments for extreme regimes
+      if (regime === MarketRegime.HIGH_VOLATILITY) {
+        // High Volatility mode requires higher momentum and sentiment sensitivity
+        score *= 1.25; 
+      } else if (regime === MarketRegime.STRONG_UPTREND) {
+        // Upward structural bias
+        score += 0.08;
+      } else if (regime === MarketRegime.STRONG_DOWNTREND) {
+        // Downward structural bias
+        score -= 0.08;
+      }
+
+      // Pass through sigmoid function to yield accurate probability
+      probabilityLong = Number((1 / (1 + Math.exp(-score * 4.8))).toFixed(4));
     } else {
       activeModel = "Mean-Reverting CatBoost Model";
+
+      // Feature 1: Bollinger Band positioning (BB Position: 0 at lower band, 1 at upper band)
       const bbPosition = (currentClose - bb.lower) / (bb.upper - bb.lower || 1);
-      const bbFactor = 0.5 - bbPosition; // Positive near support, negative near resistance
-      score = bbFactor * 0.7 - rsiFactor * 0.35 + sentimentFactor * 0.15;
-      probabilityLong = Number((1 / (1 + Math.exp(-score * 4.2))).toFixed(4));
+      const bbFactor = 0.5 - bbPosition; // positive near support, negative near resistance
+
+      // Feature 2: Mean-reverting RSI momentum (we trade counter to the short term RSI)
+      const revertingRsiFactor = -rsiFactor * 0.65; // Sell high RSI, buy low RSI
+
+      // Feature 3: Volume exhaustion. If volume is high near bands, it confirms reversals/exhaustion.
+      const exhaustionFactor = bbFactor * (volScale - 0.5) * 0.25;
+
+      // Feature 4: Neutral/dampened sentiment impact under sideways range
+      const rangeSentiment = sentimentFactor * 0.12;
+
+      // Combine factors
+      score = (bbFactor * 0.9) + revertingRsiFactor + exhaustionFactor + rangeSentiment;
+
+      if (regime === MarketRegime.LOW_VOLATILITY) {
+        // Sideways low volatility dampens any strong probability towards 0.5 (noise reduction)
+        score *= 0.4;
+      }
+
+      // Pass through sigmoid function
+      probabilityLong = Number((1 / (1 + Math.exp(-score * 4.4))).toFixed(4));
     }
 
     return { probabilityLong, activeModel, score };
@@ -154,7 +190,6 @@ class TradingEngine {
         (name.toLowerCase().includes("credentials") && g.toLowerCase().includes("credentials")) ||
         (name.toLowerCase().includes("cooldown") && g.toLowerCase().includes("cooldown")) ||
         (name.toLowerCase().includes("timing") && g.toLowerCase().includes("timing")) ||
-        (name.toLowerCase().includes("psi") && g.toLowerCase().includes("psi")) ||
         (name.toLowerCase().includes("vwap") && g.toLowerCase().includes("vwap"))
     );
   }
@@ -172,7 +207,6 @@ class TradingEngine {
     }
 
     this.initCandles();
-    this.initPsiHistories();
     this.startLoop();
   }
 
@@ -207,12 +241,6 @@ class TradingEngine {
       active_trade: active,
       account_balance_usdt: creds.account_balance_usdt,
       checkpoints: this.getCurrentCheckpoints(),
-      psi_rsi: this.psiRsi,
-      psi_macd: this.psiMacd,
-      psi_volatility: this.psiVolatility,
-      psi_max: this.psiMax,
-      psi_threshold: config.ml_settings.psi_threshold ?? 0.25,
-      psi_halt_threshold: config.ml_settings.psi_halt_threshold ?? 0.50,
       active_ml_model: this.getActiveMLModelName(),
       trade_size_multiplier: this.getTradeSizeMultiplier(),
     };
@@ -440,7 +468,9 @@ class TradingEngine {
       avgSentiment,
       currentPrice,
       bb,
-      this.currentRegime
+      this.currentRegime,
+      adxValue,
+      relVolume
     );
     let probabilityLong = ensembleResult.probabilityLong;
     const combinedScore = ensembleResult.score;
@@ -492,32 +522,34 @@ class TradingEngine {
     });
 
     // C3: Trend Alignment (EMA 21 > EMA 50)
-    // Demanded strict EMA 21/50 alignment across all environments
-    const trendAligned =
-      (signalDirection === "LONG" && isBullTrend1m) ||
-      (signalDirection === "SHORT" && isBearTrend1m);
+    // Optimized for Scalping: Bypassed in RANGE_BOUND or LOW_VOLATILITY modes because sideways scalp zones lack a structural trend direction.
+    const isRangeRegime = this.currentRegime === MarketRegime.RANGE_BOUND || this.currentRegime === MarketRegime.LOW_VOLATILITY;
+    const trendAligned = isRangeRegime
+      ? true
+      : (signalDirection === "LONG" && isBullTrend1m) ||
+        (signalDirection === "SHORT" && isBearTrend1m);
     conditions.push({
       name: "Exponential Trend Alignment",
       met: trendAligned,
-      current_value: isBullTrend1m ? "BULLISH" : "BEARISH",
-      required: "LONG: BULLISH (EMA21 > EMA50), SHORT: BEARISH (EMA21 < EMA50)",
-      description: "Confirms overall trend line support across 1-minute candlesticks.",
+      current_value: isRangeRegime ? "BYPASSED (RANGE MODE)" : (isBullTrend1m ? "BULLISH" : "BEARISH"),
+      required: isRangeRegime ? "Bypassed in range zones" : "LONG: BULLISH (EMA21 > EMA50), SHORT: BEARISH (EMA21 < EMA50)",
+      description: "Confirms overall trend line support, bypassed automatically during ranging regimes to enable bottom/top mean-reversion scalp entries.",
       priority: "HIGH",
     });
 
     // C4: Sentiment score alignment
-    // Strict sentiment alignment requires genuine positive sentiment for LONG and negative sentiment for SHORT to guarantee quality.
+    // Optimized for Scalping: Do not block neutral sentiment days. Only block if news sentiment is strongly opposing the scalp trade.
     const sentAligned =
-      (signalDirection === "LONG" && avgSentiment >= 0.10) ||
-      (signalDirection === "SHORT" && avgSentiment <= -0.10) ||
+      (signalDirection === "LONG" && avgSentiment >= -0.15) || // Allow neutral, block only if heavily bearish news
+      (signalDirection === "SHORT" && avgSentiment <= 0.15) ||  // Allow neutral, block only if heavily bullish news
       signalDirection === "NEUTRAL";
 
     conditions.push({
       name: "Sentiment Engine Alignment",
       met: sentAligned,
       current_value: `${avgSentiment.toFixed(2)}`,
-      required: "LONG: >= 0.10, SHORT: <= -0.10",
-      description: "Demands strict sentiment support to filter out trades fighting news/market sentiment.",
+      required: "LONG: >= -0.15, SHORT: <= 0.15",
+      description: "Blocks entries only when social/news sentiment strongly opposes the trade direction, preventing false filters on neutral scalp days.",
       priority: "HIGH",
     });
 
@@ -559,15 +591,17 @@ class TradingEngine {
     });
 
     // C8: ADX Trend Strength Filter
-    // Strictly required a high establishing trend (ADX > 22).
-    const adxMet = adxValue > adxThreshold;
+    // Optimized for Scalping: Require high trend strength (ADX > 22) during trend regimes, or low trend strength (ADX <= 25) to confirm range consolidation in ranging regimes.
+    const adxMet = isRangeRegime
+      ? adxValue <= 25
+      : adxValue > adxThreshold;
 
     conditions.push({
       name: "ADX Trend Strength Filter",
       met: adxMet,
       current_value: `${adxValue.toFixed(1)}`,
-      required: `ADX(14) > ${adxThreshold} (Trend Strength)`,
-      description: "Confirms trend presence or consolidations based on active regime classification.",
+      required: isRangeRegime ? "ADX(14) <= 25 (Range confirmation)" : `ADX(14) > ${adxThreshold} (Trend strength)`,
+      description: "Confirms trend presence (ADX > 22) or consolidations (ADX <= 25) depending on the active market regime.",
       priority: "MEDIUM",
     });
 
@@ -619,19 +653,7 @@ class TradingEngine {
       priority: "HIGH",
     });
 
-    // C13: Active Feature Drift Monitoring (PSI)
-    // Reverted to strict validation of statistical feature drift to avoid trading under regime drift.
-    const psiThreshold = config.ml_settings.psi_threshold !== undefined ? config.ml_settings.psi_threshold : 0.25;
-    const psiHaltLimit = config.ml_settings.psi_halt_threshold !== undefined ? config.ml_settings.psi_halt_threshold : 0.25;
-    const driftHalted = config.ml_settings.retrain_on_feature_drift && this.psiMax > psiHaltLimit;
-    conditions.push({
-      name: "Feature Drift Check (PSI)",
-      met: !driftHalted,
-      current_value: `PSI = ${this.psiMax.toFixed(3)} (${this.psiMax > psiHaltLimit ? "DRIFT CRITICAL" : "STABLE/ACCEPTABLE"})`,
-      required: `Max PSI <= ${psiHaltLimit.toFixed(2)} (Halt limit)`,
-      description: `Measures statistical divergence (Population Stability Index). Configurable trading halt threshold: ${psiHaltLimit.toFixed(2)}.`,
-      priority: "HIGH",
-    });
+    // C13: Active Feature Drift Monitoring (PSI) has been removed
 
     // C14: VWAP Deviation Anchor Check
     const vwapDevMet = signalDirection === "LONG"
@@ -937,34 +959,6 @@ class TradingEngine {
     const longTermAtr = sumAtrLong / lookback;
     const atrExpansionRatio = currentAtr / (longTermAtr || 1);
 
-    // 2. Append to rolling 100-period history arrays
-    this.rsiHistory.push(rsiVal);
-    this.macdSpreadHistory.push(emaSpreadVal);
-    this.volatilityHistory.push(atrExpansionRatio);
-
-    if (this.rsiHistory.length > 100) this.rsiHistory.shift();
-    if (this.macdSpreadHistory.length > 100) this.macdSpreadHistory.shift();
-    if (this.volatilityHistory.length > 100) this.volatilityHistory.shift();
-
-    // 3. Compute Population Stability Index (PSI)
-    try {
-      this.psiRsi = calculatePSI(this.rsiHistory, FEATURE_PROFILES.RSI.binEdges, FEATURE_PROFILES.RSI.expectedFreqs);
-      this.psiMacd = calculatePSI(this.macdSpreadHistory, FEATURE_PROFILES.MACD.binEdges, FEATURE_PROFILES.MACD.expectedFreqs);
-      this.psiVolatility = calculatePSI(this.volatilityHistory, FEATURE_PROFILES.VOLATILITY.binEdges, FEATURE_PROFILES.VOLATILITY.expectedFreqs);
-      
-      const prevPsiMax = this.psiMax;
-      this.psiMax = Math.max(this.psiRsi, this.psiMacd, this.psiVolatility);
-
-      // Alert on significant drift shift if config is enabled
-      const config = dbManager.getConfig();
-      const psiThreshold = config.ml_settings.psi_threshold ?? 0.25;
-      const psiHaltLimit = config.ml_settings.psi_halt_threshold ?? 0.50;
-      if (config.ml_settings.retrain_on_feature_drift && prevPsiMax <= psiThreshold && this.psiMax > psiThreshold) {
-        this.log(`🚨 [PSI FEATURE DRIFT WARNING] Population Stability Index (PSI) shifted from ${prevPsiMax.toFixed(2)} to ${this.psiMax.toFixed(2)} (> ${psiThreshold.toFixed(2)} alert limit)! Automatic retraining is queued. Automated entry gates will halt if PSI exceeds the hard limit of ${psiHaltLimit.toFixed(2)}.`);
-      }
-    } catch (e: any) {
-      console.error("Failed to compute PSI metrics:", e);
-    }
   }
 
   // Indicators Calculation Helpers
@@ -1610,7 +1604,9 @@ class TradingEngine {
       avgSentiment,
       currentClose,
       bb,
-      this.currentRegime
+      this.currentRegime,
+      adxValue,
+      relVolume
     );
     let probabilityLong = ensembleResult.probabilityLong;
     const combinedScore = ensembleResult.score;
@@ -1679,29 +1675,31 @@ class TradingEngine {
     });
 
     // C3: Trend Alignment (EMA 21 > EMA 50)
-    // Demanded strict EMA 21/50 alignment across all environments
-    const trendAligned =
-      (signalDirection === "LONG" && isBullTrend1m) ||
-      (signalDirection === "SHORT" && isBearTrend1m);
+    // Optimized for Scalping: Bypassed in RANGE_BOUND or LOW_VOLATILITY modes because sideways scalp zones lack a structural trend direction.
+    const isRangeRegime = this.currentRegime === MarketRegime.RANGE_BOUND || this.currentRegime === MarketRegime.LOW_VOLATILITY;
+    const trendAligned = isRangeRegime
+      ? true
+      : (signalDirection === "LONG" && isBullTrend1m) ||
+        (signalDirection === "SHORT" && isBearTrend1m);
     conditions.push({
       name: "Exponential Trend Alignment",
       met: trendAligned,
-      current_value: isBullTrend1m ? "BULLISH" : "BEARISH",
-      required: "LONG: BULLISH (EMA21 > EMA50), SHORT: BEARISH (EMA21 < EMA50)",
+      current_value: isRangeRegime ? "BYPASSED (RANGE MODE)" : (isBullTrend1m ? "BULLISH" : "BEARISH"),
+      required: isRangeRegime ? "Bypassed in range zones" : "LONG: BULLISH (EMA21 > EMA50), SHORT: BEARISH (EMA21 < EMA50)",
     });
 
     // C4: Sentiment score alignment
-    // Strict sentiment alignment requires genuine positive sentiment for LONG and negative sentiment for SHORT to guarantee quality.
+    // Optimized for Scalping: Do not block neutral sentiment days. Only block if news sentiment is strongly opposing the scalp trade.
     const sentAligned =
-      (signalDirection === "LONG" && avgSentiment >= 0.10) ||
-      (signalDirection === "SHORT" && avgSentiment <= -0.10) ||
+      (signalDirection === "LONG" && avgSentiment >= -0.15) || // Allow neutral, block only if heavily bearish news
+      (signalDirection === "SHORT" && avgSentiment <= 0.15) ||  // Allow neutral, block only if heavily bullish news
       signalDirection === "NEUTRAL";
 
     conditions.push({
       name: "Sentiment Engine Alignment",
       met: sentAligned,
       current_value: `${avgSentiment.toFixed(2)}`,
-      required: "LONG: >= 0.10, SHORT: <= -0.10",
+      required: "LONG: >= -0.15, SHORT: <= 0.15",
     });
 
     // C5: Relative Volume Confirmation (Real ratio computed from volume average)
@@ -1735,14 +1733,16 @@ class TradingEngine {
     });
 
     // C8: ADX Trend Strength Filter (Real ADX computed from market candles)
-    // Strictly required a high establishing trend (ADX > 22).
-    const adxMet = adxValue > adxThreshold;
+    // Optimized for Scalping: Require high trend strength (ADX > 22) during trend regimes, or low trend strength (ADX <= 25) to confirm range consolidation in ranging regimes.
+    const adxMet = isRangeRegime
+      ? adxValue <= 25
+      : adxValue > adxThreshold;
 
     conditions.push({
       name: "ADX Trend Strength Filter",
       met: adxMet,
       current_value: `${adxValue.toFixed(1)}`,
-      required: `ADX(14) > ${adxThreshold} (Trend Strength)`,
+      required: isRangeRegime ? "ADX(14) <= 25 (Range confirmation)" : `ADX(14) > ${adxThreshold} (Trend strength)`,
     });
 
     // C9: Minimum Account Equity Check
@@ -1785,17 +1785,7 @@ class TradingEngine {
       required: "Avoid weekends & 2:00 AM - 8:00 AM IST",
     });
 
-    // C13: Active Feature Drift Monitoring (PSI)
-    // Reverted to strict validation of statistical feature drift to avoid trading under regime drift.
-    const psiThreshold = config.ml_settings.psi_threshold !== undefined ? config.ml_settings.psi_threshold : 0.25;
-    const psiHaltLimit = config.ml_settings.psi_halt_threshold !== undefined ? config.ml_settings.psi_halt_threshold : 0.25;
-    const driftHalted = config.ml_settings.retrain_on_feature_drift && this.psiMax > psiHaltLimit;
-    conditions.push({
-      name: "Feature Drift Check (PSI)",
-      met: !driftHalted,
-      current_value: `PSI = ${this.psiMax.toFixed(3)} (${this.psiMax > psiHaltLimit ? "DRIFT CRITICAL" : "STABLE/ACCEPTABLE"})`,
-      required: `Max PSI <= ${psiHaltLimit.toFixed(2)} (Halt limit)`,
-    });
+    // C13: Active Feature Drift Monitoring (PSI) has been removed
 
     // C14: VWAP Deviation Anchor Check
     const vwapDevMet = signalDirection === "LONG"

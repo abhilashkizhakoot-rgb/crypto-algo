@@ -119,8 +119,6 @@ const DEFAULT_CONFIG: StrategyConfig = {
     auto_retrain_weekly: true,
     retrain_on_perf_drop: true,
     retrain_on_feature_drift: true,
-    psi_threshold: 0.25,
-    psi_halt_threshold: 0.50,
   },
   sentiment_settings: {
     entry_threshold_long: 0.25,
@@ -830,16 +828,7 @@ class DatabaseManager {
         changed = true;
       }
     }
-    if (this.cache?.config?.ml_settings) {
-      if (this.cache.config.ml_settings.psi_threshold === undefined) {
-        this.cache.config.ml_settings.psi_threshold = 0.25;
-        changed = true;
-      }
-      if (this.cache.config.ml_settings.psi_halt_threshold === undefined) {
-        this.cache.config.ml_settings.psi_halt_threshold = 0.50;
-        changed = true;
-      }
-    }
+
     if (changed) {
       this.save();
     }

@@ -621,12 +621,12 @@ export default function Dashboard({
 
       {/* ================= COLUMN 4: 3-LAYER SCORING & RSS HEADLINES ================= */}
       <div className="xl:col-span-1 flex flex-col gap-6" id="dashboard-col-scoring">
-        {/* ML Ensemble Router & Drift Guard Card */}
-        <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-5" id="ensemble-drift-guard-card">
+        {/* ML Ensemble Router Card */}
+        <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-5" id="ensemble-router-card">
           <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
             <div className="flex items-center gap-2">
               <Cpu className="w-4.5 h-4.5 text-indigo-600 animate-pulse" />
-              <span className="font-sans font-semibold text-slate-800 text-xs uppercase tracking-wider">ML Ensemble & Drift Guard</span>
+              <span className="font-sans font-semibold text-slate-800 text-xs uppercase tracking-wider">ML Ensemble Router</span>
             </div>
             <span className="text-[10px] font-mono text-slate-400">Ensemble Router</span>
           </div>
@@ -644,105 +644,6 @@ export default function Dashboard({
                   ? "Optimized for high-momentum directional trend environments."
                   : "Optimized for low-volatility sideways mean-reverting ranges."}
               </p>
-            </div>
-
-            {/* Feature Drift Tracking (PSI) */}
-            <div>
-              {(() => {
-                const threshold = status.psi_threshold ?? 0.25;
-                const haltLimit = status.psi_halt_threshold ?? 0.50;
-                const isDrifting = (status.psi_max || 0) > threshold;
-                const isHalted = (status.psi_max || 0) > haltLimit;
-
-                let badgeClass = "bg-emerald-50 border-emerald-200 text-emerald-700";
-                let badgeText = "✅ STABLE";
-                if (isHalted) {
-                  badgeClass = "bg-rose-50 border-rose-200 text-rose-700 font-extrabold animate-pulse";
-                  badgeText = "🚨 CRITICAL DRIFT (HALTED)";
-                } else if (isDrifting) {
-                  badgeClass = "bg-amber-50 border-amber-200 text-amber-700 font-bold";
-                  badgeText = "⚠️ WARNING (RETRAINING)";
-                }
-
-                return (
-                  <>
-                    <div className="flex justify-between items-center mb-1.5">
-                      <span className="text-[10px] font-mono text-slate-500 uppercase">Population Stability Index (PSI)</span>
-                      <span className={`px-1.5 py-0.5 rounded text-[8px] font-mono border ${badgeClass}`}>
-                        {badgeText}
-                      </span>
-                    </div>
-
-                    <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 space-y-2.5">
-                      {/* Max PSI Progress Bar */}
-                      <div>
-                        <div className="flex justify-between text-[10px] font-mono mb-1">
-                          <span className="text-slate-500">Maximum Feature Drift (Max PSI)</span>
-                          <span className={`font-semibold ${isHalted ? "text-rose-600" : isDrifting ? "text-amber-600" : "text-slate-700"}`}>
-                            {safeFormatNumber(status.psi_max || 0.05, 3)}
-                          </span>
-                        </div>
-                        <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all duration-500 ${
-                              isHalted ? "bg-rose-500" : isDrifting ? "bg-amber-500" : "bg-emerald-500"
-                            }`}
-                            style={{ width: `${Math.min(100, ((status.psi_max || 0.05) / Math.max(1.0, haltLimit * 1.3)) * 100)}%` }}
-                          ></div>
-                        </div>
-                        <div className="flex justify-between text-[8px] font-mono text-slate-400 mt-1">
-                          <span>Baseline (0.00)</span>
-                          <span>Retrain Alert ({threshold.toFixed(2)})</span>
-                          <span>Halt Limit ({haltLimit.toFixed(2)})</span>
-                        </div>
-                      </div>
-
-                      {/* Individual Feature PSI breakdown */}
-                      <div className="grid grid-cols-3 gap-2 pt-1.5 border-t border-slate-200/60 text-center">
-                        <div>
-                          <p className="text-[8px] font-mono text-slate-400 uppercase">RSI (Momentum)</p>
-                          <p className="font-sans font-bold text-xs text-slate-700 mt-0.5">
-                            {safeFormatNumber(status.psi_rsi || 0.04, 3)}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-[8px] font-mono text-slate-400 uppercase">EMA (Trend)</p>
-                          <p className="font-sans font-bold text-xs text-slate-700 mt-0.5">
-                            {safeFormatNumber(status.psi_macd || 0.05, 3)}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-[8px] font-mono text-slate-400 uppercase">ATR (Volatility)</p>
-                          <p className="font-sans font-bold text-xs text-slate-700 mt-0.5">
-                            {safeFormatNumber(status.psi_volatility || 0.03, 3)}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Risk Mitigation Status */}
-                    <div className={`p-2.5 rounded-xl border text-[10px] flex items-start gap-2 mt-2.5 ${
-                      isDrifting
-                        ? "bg-rose-50/50 border-rose-100 text-rose-800"
-                        : "bg-slate-50 border-slate-150 text-slate-600"
-                    }`}>
-                      <Zap className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 ${
-                        isDrifting ? "text-rose-600 fill-rose-100" : "text-slate-400"
-                      }`} />
-                      <div>
-                        <p className="font-bold uppercase tracking-wide">
-                          {isDrifting ? "Risk Mitigation Active" : "Risk Profile Normal"}
-                        </p>
-                        <p className="mt-0.5 text-slate-500 leading-normal">
-                          {isDrifting 
-                            ? `Feature drift exceeds ${threshold.toFixed(2)} threshold. Automated entries are locked. Trigger retraining to calibrate.`
-                            : "Feature PSI is within safety limits. Standard default order sizes are enabled."}
-                        </p>
-                      </div>
-                    </div>
-                  </>
-                );
-              })()}
             </div>
           </div>
         </div>
