@@ -190,7 +190,8 @@ class TradingEngine {
         (name.toLowerCase().includes("credentials") && g.toLowerCase().includes("credentials")) ||
         (name.toLowerCase().includes("cooldown") && g.toLowerCase().includes("cooldown")) ||
         (name.toLowerCase().includes("timing") && g.toLowerCase().includes("timing")) ||
-        (name.toLowerCase().includes("vwap") && g.toLowerCase().includes("vwap"))
+        (name.toLowerCase().includes("vwap") && g.toLowerCase().includes("vwap")) ||
+        (name.toLowerCase().includes("wedge") && g.toLowerCase().includes("wedge"))
     );
   }
 
@@ -684,6 +685,46 @@ class TradingEngine {
       priority: "CRITICAL",
     });
 
+    // C16: Wedge Pattern Filter (Avoid entry during rising/falling wedges unless confirmed high-volume breakout)
+    const wedge = this.detectWedgePattern();
+    let wedgeMet = true;
+    let wedgeVal = "NO WEDGE PATTERN DETECTED";
+    let wedgeReq = "None (Pattern normal)";
+    const wedgeRelVolume = relVolume;
+
+    if (wedge.risingWedge) {
+      const isBreakout = currentPrice > wedge.upperLineCurrent && wedgeRelVolume > 1.0;
+      if (signalDirection === "LONG") {
+        wedgeMet = isBreakout;
+        wedgeVal = isBreakout 
+          ? `RISING WEDGE: BULL BREAKOUT CONFIRMED (Close: $${currentPrice.toFixed(2)} > Upper: $${wedge.upperLineCurrent.toFixed(2)})`
+          : `RISING WEDGE: BLOCKED (No Bull Breakout, Ratio: ${wedge.ratio.toFixed(2)})`;
+      } else {
+        wedgeVal = `RISING WEDGE: PASSING (Signal: ${signalDirection})`;
+      }
+      wedgeReq = `For LONG: Close > Upper Trendline ($${wedge.upperLineCurrent.toFixed(2)}) & RelVol > 1.0 (Current RelVol: ${wedgeRelVolume.toFixed(2)}x)`;
+    } else if (wedge.fallingWedge) {
+      const isBreakout = currentPrice < wedge.lowerLineCurrent && wedgeRelVolume > 1.0;
+      if (signalDirection === "SHORT") {
+        wedgeMet = isBreakout;
+        wedgeVal = isBreakout
+          ? `FALLING WEDGE: BEAR BREAKOUT CONFIRMED (Close: $${currentPrice.toFixed(2)} < Lower: $${wedge.lowerLineCurrent.toFixed(2)})`
+          : `FALLING WEDGE: BLOCKED (No Bear Breakout, Ratio: ${wedge.ratio.toFixed(2)})`;
+      } else {
+        wedgeVal = `FALLING WEDGE: PASSING (Signal: ${signalDirection})`;
+      }
+      wedgeReq = `For SHORT: Close < Lower Trendline ($${wedge.lowerLineCurrent.toFixed(2)}) & RelVol > 1.0 (Current RelVol: ${wedgeRelVolume.toFixed(2)}x)`;
+    }
+
+    conditions.push({
+      name: "Wedge Pattern Filter",
+      met: wedgeMet,
+      current_value: wedgeVal,
+      required: wedgeReq,
+      description: "Filters trades during wedge compression to avoid low-probability trendline traps, unless a confirmed breakout with high volume occurs.",
+      priority: "CRITICAL",
+    });
+
     // Apply bypassed/skipped gates
     for (const c of conditions) {
       if (this.isGateSkipped(config, c.name)) {
@@ -1115,6 +1156,123 @@ class TradingEngine {
     }
 
     return adx;
+  }
+
+  public detectWedgePattern(): {
+    risingWedge: boolean;
+    fallingWedge: boolean;
+    upperSlope: number;
+    lowerSlope: number;
+    ratio: number;
+    upperLineCurrent: number;
+    lowerLineCurrent: number;
+  } {
+    const defaultResult = {
+      risingWedge: false,
+      fallingWedge: false,
+      upperSlope: 0,
+      lowerSlope: 0,
+      ratio: 1.0,
+      upperLineCurrent: this.currentPrice,
+      lowerLineCurrent: this.currentPrice,
+    };
+
+    const closes = this.candles1m.map((c) => c.close);
+    const highs = this.candles1m.map((c) => c.high);
+    const lows = this.candles1m.map((c) => c.low);
+    const lastIdx = closes.length - 1;
+
+    if (closes.length < 30) {
+      return defaultResult;
+    }
+
+    // 1. Detect Swing Highs and Swing Lows
+    const swingHighs: { index: number; price: number }[] = [];
+    const swingLows: { index: number; price: number }[] = [];
+
+    // Find swing points over last 60 candles (going backwards)
+    for (let i = lastIdx - 1; i >= 1; i--) {
+      const isHigh = highs[i] > highs[i - 1] && highs[i] > highs[i + 1];
+      const isLow = lows[i] < lows[i - 1] && lows[i] < lows[i + 1];
+
+      if (isHigh) {
+        swingHighs.push({ index: i, price: highs[i] });
+      }
+      if (isLow) {
+        swingLows.push({ index: i, price: lows[i] });
+      }
+
+      if (swingHighs.length >= 8 && swingLows.length >= 8) break;
+    }
+
+    if (swingHighs.length < 2 || swingLows.length < 2) {
+      return defaultResult;
+    }
+
+    // Connect the two most recent swing highs and swing lows
+    const h2 = swingHighs[0];
+    const h1 = swingHighs[1];
+
+    const l2 = swingLows[0];
+    const l1 = swingLows[1];
+
+    const barH1 = h1.index;
+    const barH2 = h2.index;
+    const high1 = h1.price;
+    const high2 = h2.price;
+
+    const barL1 = l1.index;
+    const barL2 = l2.index;
+    const low1 = l1.price;
+    const low2 = l2.price;
+
+    if (barH2 === barH1 || barL2 === barL1) {
+      return defaultResult;
+    }
+
+    // Calculate slopes
+    const upperSlope = (high2 - high1) / (barH2 - barH1);
+    const lowerSlope = (low2 - low1) / (barL2 - barL1);
+
+    // Initial and current width calculation
+    const xStart = Math.min(barH1, barL1);
+
+    const upperLineAt = (x: number) => high1 + upperSlope * (x - barH1);
+    const lowerLineAt = (x: number) => low1 + lowerSlope * (x - barL1);
+
+    const initialWidth = upperLineAt(xStart) - lowerLineAt(xStart);
+    const currentWidth = upperLineAt(lastIdx) - lowerLineAt(lastIdx);
+
+    if (initialWidth <= 0 || currentWidth <= 0) {
+      return defaultResult;
+    }
+
+    const ratio = currentWidth / initialWidth;
+    const isCompressing = ratio < 0.6;
+
+    // Rising Wedge: Higher highs (upperSlope > 0), Higher lows (lowerSlope > 0), lower trendline steeper (lowerSlope > upperSlope)
+    const risingWedge =
+      upperSlope > 0 &&
+      lowerSlope > 0 &&
+      lowerSlope > upperSlope &&
+      isCompressing;
+
+    // Falling Wedge: Lower highs (upperSlope < 0), Lower lows (lowerSlope < 0), upper trendline steeper (upperSlope < lowerSlope)
+    const fallingWedge =
+      upperSlope < 0 &&
+      lowerSlope < 0 &&
+      upperSlope < lowerSlope &&
+      isCompressing;
+
+    return {
+      risingWedge,
+      fallingWedge,
+      upperSlope,
+      lowerSlope,
+      ratio,
+      upperLineCurrent: upperLineAt(lastIdx),
+      lowerLineCurrent: lowerLineAt(lastIdx),
+    };
   }
 
   private evaluateMarketStructureConfirmation(signalDirection: "LONG" | "SHORT" | "NEUTRAL"): { confirmed: boolean; message: string; swingHigh: number; swingLow: number } {
@@ -1808,6 +1966,44 @@ class TradingEngine {
       met: structCheck.confirmed,
       current_value: structCheck.message,
       required: "Pullback HL (LONG) / LH (SHORT), Breakout Retest, or Range Reversal based on Regime",
+    });
+
+    // C16: Wedge Pattern Filter (Avoid entry during rising/falling wedges unless confirmed high-volume breakout)
+    const wedge = this.detectWedgePattern();
+    let wedgeMet = true;
+    let wedgeVal = "NO WEDGE PATTERN DETECTED";
+    let wedgeReq = "None (Pattern normal)";
+    const wedgeRelVolume = relVolume;
+
+    if (wedge.risingWedge) {
+      const isBreakout = currentClose > wedge.upperLineCurrent && wedgeRelVolume > 1.0;
+      if (signalDirection === "LONG") {
+        wedgeMet = isBreakout;
+        wedgeVal = isBreakout 
+          ? `RISING WEDGE: BULL BREAKOUT CONFIRMED (Close: $${currentClose.toFixed(2)} > Upper: $${wedge.upperLineCurrent.toFixed(2)})`
+          : `RISING WEDGE: BLOCKED (No Bull Breakout, Ratio: ${wedge.ratio.toFixed(2)})`;
+      } else {
+        wedgeVal = `RISING WEDGE: PASSING (Signal: ${signalDirection})`;
+      }
+      wedgeReq = `For LONG: Close > Upper Trendline ($${wedge.upperLineCurrent.toFixed(2)}) & RelVol > 1.0 (Current RelVol: ${wedgeRelVolume.toFixed(2)}x)`;
+    } else if (wedge.fallingWedge) {
+      const isBreakout = currentClose < wedge.lowerLineCurrent && wedgeRelVolume > 1.0;
+      if (signalDirection === "SHORT") {
+        wedgeMet = isBreakout;
+        wedgeVal = isBreakout
+          ? `FALLING WEDGE: BEAR BREAKOUT CONFIRMED (Close: $${currentClose.toFixed(2)} < Lower: $${wedge.lowerLineCurrent.toFixed(2)})`
+          : `FALLING WEDGE: BLOCKED (No Bear Breakout, Ratio: ${wedge.ratio.toFixed(2)})`;
+      } else {
+        wedgeVal = `FALLING WEDGE: PASSING (Signal: ${signalDirection})`;
+      }
+      wedgeReq = `For SHORT: Close < Lower Trendline ($${wedge.lowerLineCurrent.toFixed(2)}) & RelVol > 1.0 (Current RelVol: ${wedgeRelVolume.toFixed(2)}x)`;
+    }
+
+    conditions.push({
+      name: "Wedge Pattern Filter",
+      met: wedgeMet,
+      current_value: wedgeVal,
+      required: wedgeReq,
     });
 
     // Apply bypassed/skipped gates

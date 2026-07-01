@@ -162,6 +162,14 @@ export default function CheckpointsPage({ status, onRefresh, onTabChange }: Chec
       description: "Guards against entering trades when price is extremely overextended (above upper band for LONG, or below lower band for SHORT).",
       priority: "CRITICAL",
     },
+    {
+      name: "Wedge Pattern Filter",
+      met: true,
+      current_value: "PASSING (NO WEDGE)",
+      required: "LONG breakout or SHORT breakout during wedge patterns",
+      description: "Filters trades during wedge compression to avoid low-probability trendline traps, unless a confirmed breakout with high volume occurs.",
+      priority: "CRITICAL",
+    },
   ];
 
   const conditions = checkpointsData?.conditions || fallbackConditions;
