@@ -170,6 +170,14 @@ export default function CheckpointsPage({ status, onRefresh, onTabChange }: Chec
       description: "Filters trades during wedge compression to avoid low-probability trendline traps, unless a confirmed breakout with high volume occurs.",
       priority: "CRITICAL",
     },
+    {
+      name: "EMA 100 Overextension Protection",
+      met: true,
+      current_value: "PASSING",
+      required: "If high recent movement (>1.8*ATR in 10 bars): Price <= 100 EMA + 2.2*ATR (LONG) / Price >= 100 EMA - 2.2*ATR (SHORT)",
+      description: "Avoids entering late 'along-the-trend' breakout trades when there is a rapid movement over an earlier short period and price overextends from the 100 EMA.",
+      priority: "CRITICAL",
+    },
   ];
 
   const conditions = checkpointsData?.conditions || fallbackConditions;

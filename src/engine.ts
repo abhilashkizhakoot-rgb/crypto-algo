@@ -191,7 +191,8 @@ class TradingEngine {
         (name.toLowerCase().includes("cooldown") && g.toLowerCase().includes("cooldown")) ||
         (name.toLowerCase().includes("timing") && g.toLowerCase().includes("timing")) ||
         (name.toLowerCase().includes("vwap") && g.toLowerCase().includes("vwap")) ||
-        (name.toLowerCase().includes("wedge") && g.toLowerCase().includes("wedge"))
+        (name.toLowerCase().includes("wedge") && g.toLowerCase().includes("wedge")) ||
+        (name.toLowerCase().includes("ema 100") && g.toLowerCase().includes("ema100"))
     );
   }
 
@@ -725,6 +726,66 @@ class TradingEngine {
       priority: "CRITICAL",
     });
 
+    // C17: EMA 100 Overextension Protection (Avoid entries overextended far from the 100 EMA baseline to prevent false breakout/late trend trades)
+    const ema100List = hasEnoughData ? this.calculateEMA(closes, Math.min(closes.length, 100)) : [currentPrice];
+    const ema100Val = ema100List[lastIdx] !== undefined ? ema100List[lastIdx] : currentPrice;
+    const atr14 = hasEnoughData ? this.calculateATR(this.candles1m, 14) : [50];
+    const currentAtr = atr14[lastIdx] || 50;
+
+    // Check for high movement in earlier short period (recent 10 candles)
+    const shortLookback = 10;
+    let highMovementShort = false;
+    let shortMovementVal = 0;
+    if (this.candles1m.length >= shortLookback) {
+      const recentCandles = this.candles1m.slice(-shortLookback);
+      const recentHighs = recentCandles.map(c => c.high);
+      const recentLows = recentCandles.map(c => c.low);
+      const maxHigh = Math.max(...recentHighs);
+      const minLow = Math.min(...recentLows);
+      shortMovementVal = maxHigh - minLow;
+      highMovementShort = shortMovementVal > 1.8 * currentAtr;
+    }
+
+    const ema100Distance = currentPrice - ema100Val;
+    const maxAllowedDeviation = 2.2 * currentAtr;
+    const isEma100OverextendedLong = currentPrice > ema100Val + maxAllowedDeviation;
+    const isEma100OverextendedShort = currentPrice < ema100Val - maxAllowedDeviation;
+
+    let ema100Met = true;
+    let ema100ValStr = "PASSING (NORMAL DISTANCE)";
+    let ema100Req = "If high recent movement (>1.8*ATR in 10 bars): Close <= 100 EMA + 2.2*ATR (LONG) / Close >= 100 EMA - 2.2*ATR (SHORT)";
+
+    if (!highMovementShort) {
+      ema100ValStr = `PASSING (No high momentum pulse in last 10 candles: range $${shortMovementVal.toFixed(2)} <= $${(1.8 * currentAtr).toFixed(2)} [1.8*ATR])`;
+    } else {
+      if (signalDirection === "LONG") {
+        if (isEma100OverextendedLong) {
+          ema100Met = false;
+          ema100ValStr = `OVEREXTENDED LONG: BLOCKED (Rapid movement detected. Price: $${currentPrice.toFixed(2)} is too far above 100 EMA: $${ema100Val.toFixed(2)} by +$${ema100Distance.toFixed(2)} > Max Allowed: +$${maxAllowedDeviation.toFixed(2)})`;
+        } else {
+          ema100ValStr = `PASSING (Distance: +$${ema100Distance.toFixed(2)} <= Max Allowed: +$${maxAllowedDeviation.toFixed(2)})`;
+        }
+      } else if (signalDirection === "SHORT") {
+        if (isEma100OverextendedShort) {
+          ema100Met = false;
+          ema100ValStr = `OVEREXTENDED SHORT: BLOCKED (Rapid movement detected. Price: $${currentPrice.toFixed(2)} is too far below 100 EMA: $${ema100Val.toFixed(2)} by -$${Math.abs(ema100Distance).toFixed(2)} < Max Allowed: -$${maxAllowedDeviation.toFixed(2)})`;
+        } else {
+          ema100ValStr = `PASSING (Distance: -$${Math.abs(ema100Distance).toFixed(2)} >= Max Allowed: -$${maxAllowedDeviation.toFixed(2)})`;
+        }
+      } else {
+        ema100ValStr = `PASSING (Price: $${currentPrice.toFixed(2)}, 100 EMA: $${ema100Val.toFixed(2)}, ATR: $${currentAtr.toFixed(2)})`;
+      }
+    }
+
+    conditions.push({
+      name: "EMA 100 Overextension Protection",
+      met: ema100Met,
+      current_value: ema100ValStr,
+      required: ema100Req,
+      description: "Avoids entering late 'along-the-trend' breakout trades when the price has already overextended from the 100 EMA baseline.",
+      priority: "CRITICAL",
+    });
+
     // Apply bypassed/skipped gates
     for (const c of conditions) {
       if (this.isGateSkipped(config, c.name)) {
@@ -760,10 +821,10 @@ class TradingEngine {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 6000);
 
-      // Public endpoint, returns last 100 1-minute candles
+      // Public endpoint, returns last 300 1-minute candles
       const startTime = Date.now();
       const res = await fetch(
-        "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=100",
+        "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=300",
         { signal: controller.signal }
       );
       const latencyMs = Date.now() - startTime;
@@ -787,7 +848,7 @@ class TradingEngine {
       dbManager.addApiLog({
         service: "Binance",
         method: "GET",
-        url: "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=100",
+        url: "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=300",
         request_headers: { "User-Agent": "Delta-Exchange-Trading-Bot/1.0" },
         response_status: responseStatus,
         response_headers: respHeaders,
@@ -818,7 +879,7 @@ class TradingEngine {
     let price = 101250;
     const nowSecs = Math.floor(Date.now() / 1000);
     this.candles1m = [];
-    for (let i = 100; i >= 1; i--) {
+    for (let i = 300; i >= 1; i--) {
       const open = price + Math.random() * 80 - 40;
       const close = open + Math.random() * 100 - 50;
       const high = Math.max(open, close) + Math.random() * 30;
@@ -933,7 +994,7 @@ class TradingEngine {
           volume: 2 + Math.random() * 25,
         };
         this.candles1m.push(newCandle);
-        if (this.candles1m.length > 200) {
+        if (this.candles1m.length > 350) {
           this.candles1m.shift();
         }
         this.log(`New 1-Minute Candle formed: Open=$${newCandle.open.toFixed(2)}, Close=$${newCandle.close.toFixed(2)}`);
@@ -2004,6 +2065,64 @@ class TradingEngine {
       met: wedgeMet,
       current_value: wedgeVal,
       required: wedgeReq,
+    });
+
+    // C17: EMA 100 Overextension Protection (Avoid entries overextended far from the 100 EMA baseline to prevent false breakout/late trend trades)
+    const ema100List = this.calculateEMA(closes, Math.min(closes.length, 100));
+    const ema100Val = ema100List[lastIdx] !== undefined ? ema100List[lastIdx] : currentClose;
+    const atr14 = this.calculateATR(this.candles1m, 14);
+    const currentAtr = atr14[lastIdx] || 50;
+
+    // Check for high movement in earlier short period (recent 10 candles)
+    const shortLookback = 10;
+    let highMovementShort = false;
+    let shortMovementVal = 0;
+    if (this.candles1m.length >= shortLookback) {
+      const recentCandles = this.candles1m.slice(-shortLookback);
+      const recentHighs = recentCandles.map(c => c.high);
+      const recentLows = recentCandles.map(c => c.low);
+      const maxHigh = Math.max(...recentHighs);
+      const minLow = Math.min(...recentLows);
+      shortMovementVal = maxHigh - minLow;
+      highMovementShort = shortMovementVal > 1.8 * currentAtr;
+    }
+
+    const ema100Distance = currentClose - ema100Val;
+    const maxAllowedDeviation = 2.2 * currentAtr;
+    const isEma100OverextendedLong = currentClose > ema100Val + maxAllowedDeviation;
+    const isEma100OverextendedShort = currentClose < ema100Val - maxAllowedDeviation;
+
+    let ema100Met = true;
+    let ema100ValStr = "PASSING (NORMAL DISTANCE)";
+    let ema100Req = "If high recent movement (>1.8*ATR in 10 bars): Close <= 100 EMA + 2.2*ATR (LONG) / Close >= 100 EMA - 2.2*ATR (SHORT)";
+
+    if (!highMovementShort) {
+      ema100ValStr = `PASSING (No high momentum pulse in last 10 candles: range $${shortMovementVal.toFixed(2)} <= $${(1.8 * currentAtr).toFixed(2)} [1.8*ATR])`;
+    } else {
+      if (signalDirection === "LONG") {
+        if (isEma100OverextendedLong) {
+          ema100Met = false;
+          ema100ValStr = `OVEREXTENDED LONG: BLOCKED (Rapid movement detected. Price: $${currentClose.toFixed(2)} is too far above 100 EMA: $${ema100Val.toFixed(2)} by +$${ema100Distance.toFixed(2)} > Max Allowed: +$${maxAllowedDeviation.toFixed(2)})`;
+        } else {
+          ema100ValStr = `PASSING (Distance: +$${ema100Distance.toFixed(2)} <= Max Allowed: +$${maxAllowedDeviation.toFixed(2)})`;
+        }
+      } else if (signalDirection === "SHORT") {
+        if (isEma100OverextendedShort) {
+          ema100Met = false;
+          ema100ValStr = `OVEREXTENDED SHORT: BLOCKED (Rapid movement detected. Price: $${currentClose.toFixed(2)} is too far below 100 EMA: $${ema100Val.toFixed(2)} by -$${Math.abs(ema100Distance).toFixed(2)} < Max Allowed: -$${maxAllowedDeviation.toFixed(2)})`;
+        } else {
+          ema100ValStr = `PASSING (Distance: -$${Math.abs(ema100Distance).toFixed(2)} >= Max Allowed: -$${maxAllowedDeviation.toFixed(2)})`;
+        }
+      } else {
+        ema100ValStr = `PASSING (Price: $${currentClose.toFixed(2)}, 100 EMA: $${ema100Val.toFixed(2)}, ATR: $${currentAtr.toFixed(2)})`;
+      }
+    }
+
+    conditions.push({
+      name: "EMA 100 Overextension Protection",
+      met: ema100Met,
+      current_value: ema100ValStr,
+      required: ema100Req,
     });
 
     // Apply bypassed/skipped gates

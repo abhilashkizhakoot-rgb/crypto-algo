@@ -35,6 +35,7 @@ const AVAILABLE_GATES = [
   { id: "timing", label: "Optimal Session Timing Window Check (IST)" },
   { id: "vwap", label: "VWAP Deviation Anchor Check" },
   { id: "wedge", label: "Wedge Pattern Filter" },
+  { id: "ema100", label: "EMA 100 Overextension Protection" },
 ];
 
 interface ConfigPageProps {
