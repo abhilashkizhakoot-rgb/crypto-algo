@@ -421,9 +421,13 @@ class TradingEngine {
     const hasEnoughData = closes.length >= 50;
     const lastIdx = hasEnoughData ? closes.length - 1 : 0;
 
+    const ema9 = hasEnoughData ? this.calculateEMA(closes, 9) : [this.currentPrice];
     const ema21 = hasEnoughData ? this.calculateEMA(closes, 21) : [this.currentPrice];
     const ema50 = hasEnoughData ? this.calculateEMA(closes, 50) : [this.currentPrice];
     const rsi14 = hasEnoughData ? this.calculateRSI(closes, 14) : [50];
+
+    const isBullAligned = hasEnoughData ? (ema9[lastIdx] > ema21[lastIdx] && ema21[lastIdx] > ema50[lastIdx]) : false;
+    const isBearAligned = hasEnoughData ? (ema9[lastIdx] < ema21[lastIdx] && ema21[lastIdx] < ema50[lastIdx]) : false;
 
     const adx14 = hasEnoughData ? this.calculateADX(this.candles1m, 14) : [25];
     const adxValue = hasEnoughData ? adx14[lastIdx] : 25;
@@ -525,17 +529,30 @@ class TradingEngine {
 
     // C3: Trend Alignment (EMA 21 > EMA 50)
     // Optimized for Scalping: Bypassed in RANGE_BOUND or LOW_VOLATILITY modes because sideways scalp zones lack a structural trend direction.
+    // Enforced: Even in range modes, opposite strong alignment is blocked (e.g., no counter-trend long if bearish aligned).
     const isRangeRegime = this.currentRegime === MarketRegime.RANGE_BOUND || this.currentRegime === MarketRegime.LOW_VOLATILITY;
-    const trendAligned = isRangeRegime
-      ? true
-      : (signalDirection === "LONG" && isBullTrend1m) ||
-        (signalDirection === "SHORT" && isBearTrend1m);
+    let trendAligned = true;
+    if (isRangeRegime) {
+      if (signalDirection === "LONG" && isBearAligned) {
+        trendAligned = false;
+      } else if (signalDirection === "SHORT" && isBullAligned) {
+        trendAligned = false;
+      } else {
+        trendAligned = true;
+      }
+    } else {
+      trendAligned = (signalDirection === "LONG" && isBullTrend1m) ||
+                     (signalDirection === "SHORT" && isBearTrend1m);
+    }
+
     conditions.push({
       name: "Exponential Trend Alignment",
       met: trendAligned,
-      current_value: isRangeRegime ? "BYPASSED (RANGE MODE)" : (isBullTrend1m ? "BULLISH" : "BEARISH"),
-      required: isRangeRegime ? "Bypassed in range zones" : "LONG: BULLISH (EMA21 > EMA50), SHORT: BEARISH (EMA21 < EMA50)",
-      description: "Confirms overall trend line support, bypassed automatically during ranging regimes to enable bottom/top mean-reversion scalp entries.",
+      current_value: isRangeRegime 
+        ? (isBearAligned && signalDirection === "LONG" ? "BLOCKED: BEARISH ALIGNED" : isBullAligned && signalDirection === "SHORT" ? "BLOCKED: BULLISH ALIGNED" : "BYPASSED (RANGE MODE)")
+        : (isBullTrend1m ? "BULLISH" : "BEARISH"),
+      required: isRangeRegime ? "No strong opposite alignment in range zones" : "LONG: BULLISH (EMA21 > EMA50), SHORT: BEARISH (EMA21 < EMA50)",
+      description: "Confirms overall trend line support. Enforces safety rails to block buying in fully bearish aligned downtrends and shorting in bullish uptrends.",
       priority: "HIGH",
     });
 
@@ -1778,9 +1795,13 @@ class TradingEngine {
     const lastIdx = closes.length - 1;
     const currentClose = closes[lastIdx];
 
+    const ema9 = this.calculateEMA(closes, 9);
     const ema21 = this.calculateEMA(closes, 21);
     const ema50 = this.calculateEMA(closes, 50);
     const rsi14 = this.calculateRSI(closes, 14);
+
+    const isBullAligned = ema9[lastIdx] > ema21[lastIdx] && ema21[lastIdx] > ema50[lastIdx];
+    const isBearAligned = ema9[lastIdx] < ema21[lastIdx] && ema21[lastIdx] < ema50[lastIdx];
 
     const adx14 = this.calculateADX(this.candles1m, 14);
     const adxValue = adx14[lastIdx] || 25;
@@ -1893,16 +1914,29 @@ class TradingEngine {
 
     // C3: Trend Alignment (EMA 21 > EMA 50)
     // Optimized for Scalping: Bypassed in RANGE_BOUND or LOW_VOLATILITY modes because sideways scalp zones lack a structural trend direction.
+    // Enforced: Even in range modes, opposite strong alignment is blocked (e.g., no counter-trend long if bearish aligned).
     const isRangeRegime = this.currentRegime === MarketRegime.RANGE_BOUND || this.currentRegime === MarketRegime.LOW_VOLATILITY;
-    const trendAligned = isRangeRegime
-      ? true
-      : (signalDirection === "LONG" && isBullTrend1m) ||
-        (signalDirection === "SHORT" && isBearTrend1m);
+    let trendAligned = true;
+    if (isRangeRegime) {
+      if (signalDirection === "LONG" && isBearAligned) {
+        trendAligned = false;
+      } else if (signalDirection === "SHORT" && isBullAligned) {
+        trendAligned = false;
+      } else {
+        trendAligned = true;
+      }
+    } else {
+      trendAligned = (signalDirection === "LONG" && isBullTrend1m) ||
+                     (signalDirection === "SHORT" && isBearTrend1m);
+    }
+
     conditions.push({
       name: "Exponential Trend Alignment",
       met: trendAligned,
-      current_value: isRangeRegime ? "BYPASSED (RANGE MODE)" : (isBullTrend1m ? "BULLISH" : "BEARISH"),
-      required: isRangeRegime ? "Bypassed in range zones" : "LONG: BULLISH (EMA21 > EMA50), SHORT: BEARISH (EMA21 < EMA50)",
+      current_value: isRangeRegime 
+        ? (isBearAligned && signalDirection === "LONG" ? "BLOCKED: BEARISH ALIGNED" : isBullAligned && signalDirection === "SHORT" ? "BLOCKED: BULLISH ALIGNED" : "BYPASSED (RANGE MODE)")
+        : (isBullTrend1m ? "BULLISH" : "BEARISH"),
+      required: isRangeRegime ? "No strong opposite alignment in range zones" : "LONG: BULLISH (EMA21 > EMA50), SHORT: BEARISH (EMA21 < EMA50)",
     });
 
     // C4: Sentiment score alignment
