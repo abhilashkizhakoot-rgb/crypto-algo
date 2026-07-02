@@ -1476,6 +1476,8 @@ class TradingEngine {
         } else {
           message = `High Volatility Filter: Waiting for two consecutive green candles to confirm direction.`;
         }
+      } else if (this.currentRegime === MarketRegime.STRONG_DOWNTREND) {
+        message = `Trend Safety Lock: LONG entries are blocked during a Strong Downtrend regime to prevent catching a falling knife.`;
       } else {
         message = `Low Volatility: Avoid trading to prevent capital erosion under sideways chop.`;
       }
@@ -1512,6 +1514,8 @@ class TradingEngine {
         } else {
           message = `High Volatility Filter: Waiting for two consecutive red candles to confirm direction.`;
         }
+      } else if (this.currentRegime === MarketRegime.STRONG_UPTREND) {
+        message = `Trend Safety Lock: SHORT entries are blocked during a Strong Uptrend regime to prevent shorting a parabolic rally.`;
       } else {
         message = `Low Volatility: Avoid trading to prevent capital erosion under sideways chop.`;
       }
@@ -1598,6 +1602,17 @@ class TradingEngine {
     const isBullAligned = ema9[lastIdx] > ema21[lastIdx] && ema21[lastIdx] > ema50[lastIdx];
     const isBearAligned = ema9[lastIdx] < ema21[lastIdx] && ema21[lastIdx] < ema50[lastIdx];
 
+    const ema100 = this.calculateEMA(closes, Math.min(closes.length, 100));
+    const ema100Val = (ema100.length > lastIdx && ema100[lastIdx] !== undefined) ? ema100[lastIdx] : ema50[lastIdx];
+
+    const isBullAlignedFull = isBullAligned && (ema50[lastIdx] > ema100Val);
+    const isBearAlignedFull = isBearAligned && (ema50[lastIdx] < ema100Val);
+
+    const ema9Val = ema9[lastIdx];
+    const ema21Val = ema21[lastIdx];
+    const ema50Val = ema50[lastIdx];
+    const spread21to50Percent = Math.abs(ema21Val - ema50Val) / ema50Val;
+
     // Simple Directional trend direction count to combine with ADX
     let upwardCount = 0;
     let downwardCount = 0;
@@ -1606,6 +1621,18 @@ class TradingEngine {
       else downwardCount++;
     }
     const trendStrength = Math.abs(upwardCount - downwardCount) / 15; // 0 to 1
+
+    const isStrongUptrend = isBullAligned && (
+      currentAdx > adxThreshold ||
+      trendStrength > 0.4 ||
+      (isBullAlignedFull && (currentAdx > 15.0 || trendStrength > 0.25 || spread21to50Percent > 0.0005))
+    );
+
+    const isStrongDowntrend = isBearAligned && (
+      currentAdx > adxThreshold ||
+      trendStrength > 0.4 ||
+      (isBearAlignedFull && (currentAdx > 15.0 || trendStrength > 0.25 || spread21to50Percent > 0.0005))
+    );
 
     let regime = MarketRegime.RANGE_BOUND;
     let confidence = 0.5;
@@ -1616,10 +1643,10 @@ class TradingEngine {
     } else if (atrExpansionRatio > 1.5) {
       regime = MarketRegime.HIGH_VOLATILITY;
       confidence = 0.7 + (atrExpansionRatio - 1.5) * 0.2;
-    } else if (isBullAligned && (currentAdx > adxThreshold || trendStrength > 0.4)) {
+    } else if (isStrongUptrend) {
       regime = MarketRegime.STRONG_UPTREND;
       confidence = 0.6 + (currentAdx / 100) * 0.35;
-    } else if (isBearAligned && (currentAdx > adxThreshold || trendStrength > 0.4)) {
+    } else if (isStrongDowntrend) {
       regime = MarketRegime.STRONG_DOWNTREND;
       confidence = 0.6 + (currentAdx / 100) * 0.35;
     } else {

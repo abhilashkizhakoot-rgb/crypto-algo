@@ -125,7 +125,20 @@ if (OriginalEventSource) {
           }
         }
         
-        const finalUrl = resolvedUrl instanceof URL ? resolvedUrl.href : String(resolvedUrl);
+        let finalUrl = resolvedUrl instanceof URL ? resolvedUrl.href : String(resolvedUrl);
+        
+        // Ensure finalUrl is absolute for EventSource compatibility (especially Safari/WebKit)
+        if (typeof window !== "undefined" && window.location) {
+          const isAbsolute = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(finalUrl);
+          if (!isAbsolute) {
+            try {
+              finalUrl = new URL(finalUrl, window.location.href).href;
+            } catch (e) {
+              console.warn("Failed to absolute-resolve EventSource URL:", finalUrl, e);
+            }
+          }
+        }
+        
         super(finalUrl, eventSourceInitDict);
       }
     }
